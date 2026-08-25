@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "create-prd": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-execution/skills/create-prd/SKILL.md",
+      "computedHash": "3368fad0b60a31605f03340e33fbe0fb90982ba4e80a904298168f3fbcba4ba7"
+    },
+    "identify-assumptions-new": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-product-discovery/skills/identify-assumptions-new/SKILL.md",
+      "computedHash": "f516b5f291c633e6d78ce82e02d86260bce8748d8abece121e37630ea0e6ae98"
+    },
+    "strategy-red-team": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-execution/skills/strategy-red-team/SKILL.md",
+      "computedHash": "970566bcc472eaace977be6fce7a41f1f869b8eaf87fa0c78be0ecd14fa85df0"
+    },
+    "wwas": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-execution/skills/wwas/SKILL.md",
+      "computedHash": "5b51da69db655652538777dc7cc30e08865f1b2e17232b8850bf58871ee744be"
+    }
+  }
+}
