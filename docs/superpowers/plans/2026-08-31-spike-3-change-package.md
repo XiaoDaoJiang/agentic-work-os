@@ -100,6 +100,17 @@
 - The integrated F-10 path uses the real `validateChangePackageBytes()` and a real fresh-checkout `replayChangePackage()` instead of success stubs.
 - CP-11 remains a separate drift-gate dependency. This implementation does not authorize Accept/Delivery when registered source/workspace drift is abnormal.
 
+## CP-11 cross-contract dependency
+
+`change-package-v0` only proves that a reviewed package can be sealed and deterministically replayed from its declared base. It does not prove that the source repository or registered Workspace remained within the trusted-local drift contract while the Run executed.
+
+Therefore:
+
+- abnormal source/Workspace drift must independently block Accept and Delivery;
+- a healthy package/replay result cannot override a failed drift gate;
+- CP-11 evidence belongs to the Spike 2 / drift cross-contract evidence set and must be referenced by the final Spike 3 decision;
+- until that evidence exists, this candidate remains `READY_FOR_EVIDENCE`, not `PASS`.
+
 ## Verification boundary
 
 Passing cross-platform Git/package/replay tests proves the candidate format can encode/rebuild the declared Git fixture and bind sealed evidence. It does **not** by itself make Spike 3 `PASS`.
