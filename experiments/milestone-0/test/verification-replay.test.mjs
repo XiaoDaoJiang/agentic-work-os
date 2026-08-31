@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { prepareVerificationReplay } from '../src/verification-replay.mjs';
+const document={verification_invocation_v0:{execution:{mode:'argv',program:'node',argv:['script.js','a b','$()']},cwd_binding:'assigned_workspace',env:{inheritance_policy:'allowlist',inherit_names:['PATH'],overrides:{M0:'1'},unset:['SECRET']},timeout_ms:5000,output:{stdout:'separate ordered frames',stderr:'separate ordered frames'},cancel:'runner_owned_process_containment'}};
+test('prepareVerificationReplay preserves the logical contract bytes and only resolves the cwd role to replay checkout',()=>{const before=JSON.stringify(document);const expectedHash=createHash('sha256').update(Buffer.from(before)).digest('hex');const result=prepareVerificationReplay({verificationInvocation:document,originalResolvedCwd:'/tmp/original-workspace',replayCheckout:'/tmp/replay-checkout'});assert.equal(JSON.stringify(document),before);assert.deepEqual(result.verificationInvocation,document);assert.equal(result.logicalContractSha256,expectedHash);assert.equal(result.originalResolvedCwd,path.resolve('/tmp/original-workspace'));assert.equal(result.replayResolvedCwd,path.resolve('/tmp/replay-checkout'));assert.equal(result.cwdBinding,'assigned_workspace');});
+test('prepareVerificationReplay rejects invalid verification contracts',()=>{const invalid=structuredClone(document);invalid.verification_invocation_v0.cwd_binding='caller';assert.throws(()=>prepareVerificationReplay({verificationInvocation:invalid,originalResolvedCwd:'/tmp/a',replayCheckout:'/tmp/b'}),/cwd_binding/);});
