@@ -138,3 +138,35 @@ The RI matrix creates and mutates repositories only inside the supplied disposab
 ## Next work
 
 Execute and index RI-01..RI-11 on the target Windows environment. In parallel, Spike 1 process containment/Cancel may proceed using its own hostile mock because the frozen plan allows that work independently; repository identity must still PASS before it is relied on as the experiment scheduling key. Real Codex remains deferred to Spike 2 and still requires the trusted-local acknowledgement before every real start.
+
+## Spike 1 hostile process fixture
+
+The hostile fixture is an adversarial stimulus for Spike 1; it is **not** the Local Runner and does not claim process containment. It can emit segmented and continuous stdout/stderr, acknowledge a stdin nonce, create child/grandchild processes, exit zero/nonzero, hang, detach a descendant after root exit, write bounded marker sequences, and deliberately keep writing after an ignored soft-stop signal.
+
+Freeze and inspect a scenario/seed without spawning any process:
+
+```bash
+node src/cli.mjs hostile-fixture-plan \
+  --scenario ./examples/hostile-process-scenario.json \
+  --seed 20260831
+```
+
+Direct fixture execution is for disposable diagnostics only. Both the control log and marker must stay under the supplied root:
+
+```bash
+node fixtures/hostile-process.mjs \
+  --root ./evidence/scratch-hostile \
+  --scenario ./examples/hostile-process-scenario.json \
+  --control-file ./evidence/scratch-hostile/control.jsonl \
+  --marker ./evidence/scratch-hostile/marker.jsonl \
+  --role parent
+```
+
+The control log records only fixture-observed facts such as role, PID, PPID, cwd, descendant PID and fixture actions. It never asserts that a process is inside a Runner-owned boundary. The future Runner/independent observer must establish ownership, survivor facts, drain barriers and terminal semantics from OS evidence.
+
+Current Spike 1 evidence status:
+
+- hostile scenario validation / deterministic timing: executable test coverage;
+- raw fixture behavior (streams, stdin, descendants, exit/hang, marker, root-early descendant, controlled late write): executable test coverage;
+- Windows process boundary ownership, zero-survivor Cancel, Runner crash reconciliation and post-stop observation: **NOT RUN / NOT IMPLEMENTED by this fixture increment**;
+- Spike 1 verdict: **NOT EVALUATED**.
