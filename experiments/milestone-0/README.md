@@ -130,10 +130,11 @@ The RI matrix creates and mutates repositories only inside the supplied disposab
 
 ## Current evidence state
 
-- RI-11 canonical vector: covered by deterministic unit tests.
-- RI-01..RI-10: **not executed by this repository change**; they require the target Windows run.
-- Technical Gate: **not evaluated by M0-01**.
+- RI-11 canonical vector: covered by deterministic unit tests and currently matches the frozen 83-byte/SHA-256 vector.
+- RI-01..RI-10: **NOT RUN on the target Windows environment by this repository change**.
+- Repository-identity cross-cutting contract: **INCONCLUSIVE until target-Windows evidence is indexed**.
+- Technical Gate: **NOT EVALUATED by M0-01**.
 
 ## Next work
 
-Execute and index RI-01..RI-11 on the target Windows environment. If the repository-identity contract is `PASS`, continue to Spike 1 process containment/Cancel and the remaining cross-cutting contracts. Real Codex remains deferred to Spike 2 and still requires the trusted-local acknowledgement before every real start.
+Execute and index RI-01..RI-11 on the target Windows environment. In parallel, Spike 1 process containment/Cancel may proceed using its own hostile mock because the frozen plan allows that work independently; repository identity must still PASS before it is relied on as the experiment scheduling key. Real Codex remains deferred to Spike 2 and still requires the trusted-local acknowledgement before every real start.
