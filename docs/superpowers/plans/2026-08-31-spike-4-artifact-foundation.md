@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the smallest real filesystem + SQLite Artifact seal/reconciliation prototype needed to exercise F-01..F-14 and F-17 without freezing production schema or claiming the full Spike 4 verdict.
+**Goal:** Build the smallest real filesystem + SQLite Artifact seal/reconciliation prototype needed to exercise F-01..F-17 without freezing production schema or claiming the full Spike 4 verdict.
 
-**Architecture:** Keep staging and finalized objects under the same experiment store root. Sealing requires producer stop + drain, writes/syncs/closes a run-scoped temp file, hashes it, atomically publishes it to a content-addressed object path with a same-volume no-overwrite hard-link + staging unlink, then commits Artifact row + `artifact.created` Event + optional dependent phase/state change in one SQLite transaction. Reconciliation independently re-hashes objects, classifies temp/orphan/missing/corrupt facts, and computes Review readiness. A separate pure read model computes accepted Package `delivery_integrity` without rewriting historical decisions or terminal state.
+**Architecture:** Keep staging and finalized objects under the same experiment store root. Sealing requires producer stop + drain, writes/syncs/closes a run-scoped temp file, hashes it, atomically publishes it to a content-addressed object path with a same-volume no-overwrite hard-link + staging unlink, then commits Artifact row + `artifact.created` Event + optional dependent phase/state change in one SQLite transaction. Reconciliation independently re-hashes objects, classifies temp/orphan/missing/corrupt facts, and computes Review readiness. A separate pure read model computes accepted Package `delivery_integrity` without rewriting historical decisions or terminal state. Startup/terminal recovery contracts remain separate from Artifact storage and feed process/resource reconciliation rather than inventing Artifact states.
 
 **Tech Stack:** Node.js >=22.13 built-ins (`node:fs`, `node:crypto`, `node:sqlite`), `node:test`, no third-party packages. `node:sqlite` was added in Node 22.5 and is unflagged from Node 22.13; the M0 harness uses the unflagged floor.
 
@@ -21,7 +21,8 @@
 - Review readiness requires all four Required Artifact types readable/hash-matching and exactly one healthy `change_package`.
 - Partial sealed evidence for failed/cancelled/interrupted runs may remain visible but never becomes Review-ready.
 - `delivery_integrity` exists only for accepted decisions and is exactly `healthy | missing | corrupt`; it is a recalculated projection, not a business state or Event.
-- This work does not implement Change Package format/replay itself, real Codex, product UI, Event Sourcing, remote Store, automatic cleanup, backup or production schema.
+- Terminal late output is discarded and reported to resource reconciliation as a hard failure; it is never converted into a new Artifact or business Event.
+- This work does not implement real Codex, product UI, Event Sourcing, remote Store, automatic cleanup, backup or production schema.
 
 ---
 
@@ -77,6 +78,7 @@
 **Files:**
 - Create: `experiments/milestone-0/src/delivery-integrity.mjs`
 - Create: `experiments/milestone-0/test/delivery-integrity.test.mjs`
+- Create: `experiments/milestone-0/test/delivery-integrity-change-package.test.mjs`
 
 **Interfaces:**
 - `computeDeliveryIntegrity({ store, db, runId, manifestValidator, replayValidator })` returns `null` for no accepted decision, otherwise `{ value, reasonCodes, checkedAt }`.
@@ -86,6 +88,7 @@
 - [x] Run focused tests and confirm failure because the module is absent.
 - [x] Implement read-only three-value projection with explicit manifest/replay validators.
 - [x] Verify recomputation never appends Event or rewrites ReviewDecision/Run terminal facts.
+- [x] Replace the healthy-path success stubs with Spike 3 `validateChangePackageBytes()` plus a real fresh-checkout `replayChangePackage()` integration test.
 
 ### Task 5: Strong-kill crash injection
 
@@ -98,17 +101,32 @@
 - [x] Kill a separate sealing process at after-flush, after-hash, after-finalize, after-Artifact-row, after-Event and before-commit boundaries.
 - [x] Reopen SQLite/Store after every kill and verify allowed facts: no DB advance before commit; finalized post-publish object becomes orphan; SQLite transaction rows/phase roll back.
 
-### Task 6: Verification and remaining boundary
+### Task 6: Startup convergence and terminal late-output boundary
 
-- [x] Run the complete Spike 4 focused suite and syntax checks.
+**Files:**
+- Create: `experiments/milestone-0/src/run-recovery.mjs`
+- Create: `experiments/milestone-0/test/run-recovery.test.mjs`
+
+- [x] Write RED tests for F-15 nonterminal startup with unknown staging/resource facts.
+- [x] Implement F-15 projection: preserve phase, converge business state to `interrupted`, set `resource_state = reconciliation_required`, keep the scheduling lock and block Review/new same-resource Run.
+- [x] Write RED tests for F-16 terminal late output.
+- [x] Implement the platform-neutral F-16 contract: discard bytes, never seal/append Agent output, preserve business terminal and expose only `resource.reconciliation.started/blocked` events while the resource reducer reports a hard failure.
+- [x] Fresh focused verification: **5/5 PASS**; `node --check` on `run-recovery.mjs` and `resource-reconciliation.mjs` exits 0.
+- [ ] Wire the F-16 discard contract to the target Windows Runner's actual late-stream callback after the Runner-owned boundary implementation exists.
+
+### Task 7: Verification and remaining evidence boundary
+
+- [x] Run the original complete Spike 4 focused suite and syntax checks before the F-15/F-16 increment.
 - [x] Inspect temp/finalized/SQLite facts for every injected boundary.
 - [x] Confirm no production schema, Event Sourcing, remote store or automatic cleanup was added.
+- [x] Integrate real Spike 3 package parsing/fresh-checkout replay into the F-10 healthy path.
+- [x] Make F-15 and the platform-neutral F-16 discard/hard-fail semantics executable.
 - [ ] Run the same strong-kill matrix on the target Windows filesystem/Node runtime and save/index raw evidence.
-- [ ] Implement/integrate F-15 nonterminal startup convergence with the Run/resource state harness.
-- [ ] Integrate F-16 terminal late-output discard with the future Runner; the platform-neutral resource reducer already classifies it as a hard failure.
-- [ ] Replace stub manifest/replay validators with Spike 3 Change Package parsing and replay evidence before claiming F-10/F-13 Gate evidence.
+- [ ] Wire F-16 to actual Windows Runner output delivery and prove terminal late bytes cannot enter staging/Artifact sealing.
 
-## Fresh verification
+## Verification records
+
+### Original Spike 4 foundation
 
 On the available Linux host with Node v22.16.0:
 
@@ -117,11 +135,24 @@ On the available Linux host with Node v22.16.0:
 - Artifact reconciliation/Review readiness suite: 8 tests PASS;
 - delivery_integrity suite: 6 tests PASS;
 - strong-kill child-process crash suite: 6 tests PASS;
-- combined Spike 4 focused suites: **29/29 PASS**;
+- combined foundation suites: **29/29 PASS**;
 - `node --check src/*.mjs fixtures/*.mjs`: **PASS**.
 
 The strong-kill tests use a real separate Node process and actual `SIGKILL`; they are not thrown-exception simulations. They are preliminary Linux filesystem/SQLite evidence only and do not replace the required target-Windows rerun.
 
+### Subsequent integrations
+
+- Spike 3 focused implementation record: 17/17 PASS and real `delivery_integrity=healthy` validation through package parsing + fresh-checkout replay.
+- F-15/F-16 recovery contract RED→GREEN executed after the Spike 3 integration: **5/5 PASS**; syntax checks for the new/reused recovery modules exit 0.
+
+These records are implementation verification, not a final cross-platform Spike 4 verdict.
+
 ## Verification boundary
 
-Current code makes F-01..F-14/F-17 semantics executable, but the Spike 4 verdict remains **INCONCLUSIVE / NOT EVALUATED** because target-Windows strong-kill evidence, F-15/F-16 integration, and real Change Package manifest/replay validation are still missing. No Technical Gate PASS is claimed.
+All F-01..F-17 semantics now have an executable platform-neutral candidate or test path, except that F-16's physical prevention/discard guarantee still needs to be wired to and observed through the actual Windows Runner. The Spike 4 verdict remains **NOT EVALUATED / pending target-Windows evidence** because:
+
+1. the strong-kill filesystem/SQLite matrix has not been rerun and indexed on the target Windows environment;
+2. F-16 has not yet been observed through the real Runner-owned process/output boundary;
+3. the Technical Gate still requires the independent repository identity, Spike 1, Spike 2, drift and cross-contract evidence.
+
+No Technical Gate PASS is claimed.
