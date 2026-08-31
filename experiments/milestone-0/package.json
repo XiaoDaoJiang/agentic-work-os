@@ -1,0 +1,10 @@
+{
+  "name": "@agentic-work-os/milestone-0-harness",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/*.mjs"
+  }
+}

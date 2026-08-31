@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+import path from 'node:path';
+import { mkdir, readFile } from 'node:fs/promises';
+import { createExperimentRunId } from './ids.mjs';
+import { sha256File } from './hash.mjs';
+import { createManifest, indexEvidenceFile, writeManifest } from './manifest.mjs';
+import { createDisposableFixture } from './fixture.mjs';
+import { computeRepositoryIdentityVector, verifyCanonicalRepositoryIdentityVector } from './repository-identity.mjs';
+import { renderTrustedLocalPrompt } from './trusted-local.mjs';
+import { validateVerificationInvocation } from './verification-invocation.mjs';
+
+function parseOptions(args) {
+  const options = {};
+  for (let i = 0; i < args.length; i += 2) {
+    if (!args[i]?.startsWith('--') || args[i + 1] === undefined) throw new Error(`Expected --name value near ${args[i] ?? '<end>'}`);
+    options[args[i].slice(2)] = args[i + 1];
+  }
+  return options;
+}
+
+async function init(args) {
+  const options = parseOptions(args);
+  for (const required of ['evidence-root', 'plan', 'harness-revision']) {
+    if (!options[required]) throw new Error(`--${required} is required`);
+  }
+  const planPath = path.resolve(options.plan);
+  const evidenceRoot = path.resolve(options['evidence-root']);
+  const experimentRunId = createExperimentRunId();
+  const runRoot = path.join(evidenceRoot, experimentRunId);
+  const directories = [
+    'spike-1-runner', 'spike-2-codex-adapter', 'spike-3-change-package', 'spike-4-artifact-durability',
+    'cross-contracts/repository-identity', 'cross-contracts/trusted-local', 'cross-contracts/verification-invocation', 'cross-contracts/resource-reconciliation'
+  ];
+  await Promise.all(directories.map((dir) => mkdir(path.join(runRoot, dir), { recursive: true })));
+  const manifestPath = path.join(runRoot, 'manifest.json');
+  const manifest = createManifest({
+    experimentRunId,
+    planSha256: await sha256File(planPath),
+    harnessRevision: options['harness-revision'],
+    planPath
+  });
+  await writeManifest(manifestPath, manifest);
+  process.stdout.write(`${JSON.stringify({ experimentRunId, runRoot, manifestPath }, null, 2)}\n`);
+}
+
+async function main() {
+  const [command, ...args] = process.argv.slice(2);
+  if (command === 'repository-vector') {
+    const result = computeRepositoryIdentityVector('0123456789abcdef', '000102030405060708090a0b0c0d0e0f');
+    process.stdout.write(`${JSON.stringify({ ...result, matchesCanonicalVector: verifyCanonicalRepositoryIdentityVector() }, null, 2)}\n`);
+    return;
+  }
+  if (command === 'validate-verification') {
+    if (args.length !== 1) throw new Error('validate-verification requires a JSON file path');
+    validateVerificationInvocation(JSON.parse(await readFile(path.resolve(args[0]), 'utf8')));
+    process.stdout.write('VALID verification_invocation_v0\n');
+    return;
+  }
+  if (command === 'trusted-local-prompt') {
+    const options = parseOptions(args);
+    for (const required of ['source', 'workspace', 'run-id']) if (!options[required]) throw new Error(`--${required} is required`);
+    process.stdout.write(`${renderTrustedLocalPrompt({ sourceRepository: path.resolve(options.source), assignedWorkspace: path.resolve(options.workspace), experimentRunId: options['run-id'] })}\n`);
+    return;
+  }
+  if (command === 'create-fixture') {
+    const options = parseOptions(args);
+    for (const required of ['parent', 'run-id']) if (!options[required]) throw new Error(`--${required} is required`);
+    process.stdout.write(`${JSON.stringify(await createDisposableFixture({ parent: options.parent, experimentRunId: options['run-id'] }), null, 2)}\n`);
+    return;
+  }
+  if (command === 'index-evidence') {
+    const options = parseOptions(args);
+    for (const required of ['manifest', 'file']) if (!options[required]) throw new Error(`--${required} is required`);
+    process.stdout.write(`${JSON.stringify(await indexEvidenceFile(options.manifest, options.file), null, 2)}\n`);
+    return;
+  }
+  if (command === 'init') {
+    await init(args);
+    return;
+  }
+  throw new Error(`Unknown command: ${command ?? '<none>'}`);
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error.name}: ${error.message}\n`);
+  process.exitCode = 1;
+});
