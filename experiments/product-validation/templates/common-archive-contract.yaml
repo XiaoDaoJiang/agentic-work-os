@@ -1,0 +1,17 @@
+archive_contract_version: pv-archive-v0
+population_mode: script_or_wizard_of_oz
+user_extra_data_entry_required: false
+fields:
+  project_ref: { required: true }
+  run_ref: { required: true }
+  observed_at: { required: true }
+  cwd: { required: true }
+  objective_or_prompt_snapshot_ref: { required: true }
+  objective_or_prompt_snapshot_hash: { required: true }
+  agent_output_ref: { required: true }
+  diff_ref: { required: true }
+  verification_invocation_ref: { required: true }
+  verification_result_ref: { required: true }
+  change_package_ref: { required: false }
+  review_fact_ref: { required: false }
+parity_rule: "B and C must use the same fields, population rules and participant-visible presentation."

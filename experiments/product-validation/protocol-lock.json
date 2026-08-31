@@ -1,0 +1,19 @@
+{
+  "lock_version": "product-validation-lock-v0",
+  "protocol_path": "docs/pm/40-validation-protocol.md",
+  "protocol_git_blob_sha1": "ee83598caba483b36248fd85c18ba8c7516cb3d1",
+  "baseline_commit": "01c487da501553d95801d65520dff2708fc6512f",
+  "locked_on": "2026-08-31",
+  "evidence_status": "NOT_RECORDED",
+  "pre_registered_settings": {
+    "participants": 3,
+    "real_problem_target": 5,
+    "domain_instances": 9,
+    "minimum_distinct_actual_end_to_end_trajectories": 6,
+    "reuse_observation_window_days": 14,
+    "reuse_window_start": "first_problem_review_completed_at",
+    "reminder_policy": "none",
+    "preallocation_counts_as_qualifying_reuse": false
+  },
+  "note": "The 14-day observation window is an operational setting frozen before participant observation; it is not evidence that 14 days is statistically sufficient."
+}
