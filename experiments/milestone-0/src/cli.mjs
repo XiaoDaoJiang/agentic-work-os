@@ -13,6 +13,7 @@ import {
 import { getWindowsFileIdentity } from './windows-file-identity.mjs';
 import { runRepositoryIdentityMatrix } from './repository-identity-matrix.mjs';
 import { renderTrustedLocalPrompt } from './trusted-local.mjs';
+import { createSeededDelays, validateHostileScenario } from './hostile-scenario.mjs';
 import { validateVerificationInvocation } from './verification-invocation.mjs';
 
 function parseOptions(args) {
@@ -89,8 +90,27 @@ async function repositoryIdentityMatrix(args) {
   process.exitCode = result.overallVerdict === 'PASS' ? 0 : result.overallVerdict === 'FAIL' ? 1 : 2;
 }
 
+async function hostileFixturePlan(args) {
+  const options = parseOptions(args);
+  for (const required of ['scenario', 'seed']) {
+    if (!options[required]) throw new Error(`--${required} is required`);
+  }
+  const seed = Number(options.seed);
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('--seed must be an integer between 0 and 4294967295');
+  const document = JSON.parse(await readFile(path.resolve(options.scenario), 'utf8'));
+  document.hostile_process_v0 = { ...(document.hostile_process_v0 ?? {}), seed };
+  const scenario = validateHostileScenario(document);
+  const frameCount = Math.max(scenario.stdoutFrames.length, scenario.stderrFrames.length);
+  const outputJitterMs = createSeededDelays(scenario.seed, frameCount, 0, scenario.timingJitterMs);
+  process.stdout.write(`${JSON.stringify({ scenario, outputJitterMs }, null, 2)}\n`);
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (command === 'hostile-fixture-plan') {
+    await hostileFixturePlan(args);
+    return;
+  }
   if (command === 'repository-identity') {
     await repositoryIdentity(args);
     return;
