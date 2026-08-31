@@ -33,10 +33,10 @@
 - `validateBoundaryFrame(frame)` validates structured helper frames.
 - `reduceBoundaryFrames(frames)` returns root/boundary facts, active process count, stream sequences, drain state, cancel facts and protocol violations.
 
-- [ ] Write failing tests for boundary creation before process assignment, root PID facts, monotonic per-stream sequence, cancel/terminate ordering, active-process snapshots, drain completion, duplicate terminal helper facts and late stream frames after drain.
-- [ ] Run the focused test and confirm failure because the module is absent.
-- [ ] Implement the minimal strict validator/reducer; unknown frame kinds or impossible transitions must fail closed.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for boundary creation before process assignment, root PID facts, monotonic per-stream sequence, cancel/terminate ordering, active-process snapshots, drain completion, duplicate terminal helper facts and late stream frames after drain.
+- [x] Run the focused test and confirm failure because the module is absent.
+- [x] Implement the minimal strict validator/reducer; unknown frame kinds or impossible transitions fail closed.
+- [x] Re-run focused tests to green.
 
 ### Task 2: Resource reconciliation reducer
 
@@ -48,10 +48,10 @@
 - `evaluateResourceSafety(facts)` returns `{ resourceState, lockAction, reasonCodes, hardFail }`.
 - `nextReconciliationProjection(previous, facts)` returns only resource-state/lock changes and allowed reconciliation event type.
 
-- [ ] Write failing tests mapping RR-01..RR-09 where the contract is pure-data testable: live process, undrained streams, known safe facts, drift orthogonality, insufficient facts, user-only confirmation, terminal late write, delivery-integrity orthogonality and unrelated repository identity.
-- [ ] Run the focused tests and confirm failure because the module is absent.
-- [ ] Implement the strict reducer; never mutate or synthesize `phase`, business `state`, `run.terminal`, ReviewDecision or delivery integrity.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests mapping RR-01..RR-09 where the contract is pure-data testable: live process, undrained streams, known safe facts, drift orthogonality, insufficient facts, user-only confirmation, terminal late write, delivery-integrity orthogonality and unrelated repository identity.
+- [x] Run the focused tests and confirm failure because the module is absent.
+- [x] Implement the strict reducer; it never mutates or synthesizes `phase`, business `state`, `run.terminal`, ReviewDecision or delivery integrity.
+- [x] Re-run focused tests to green.
 
 ### Task 3: Independent post-stop observer
 
@@ -63,20 +63,34 @@
 - `observePostStop({ durationMs, sampleIntervalMs, processProbe, markerProbe, outputProbe, sleep, now })` returns every sample plus zero-survivor/zero-late-write verdict facts.
 - Probes are injected so tests do not let the Runner self-attest.
 
-- [ ] Write failing tests for full-window sampling, survivor detection, marker mutation detection, output mutation detection and no early-success return before the declared observation duration.
-- [ ] Run the focused tests and confirm failure because the module is absent.
-- [ ] Implement a minimal observer that always completes the full window unless a probe itself errors; probe errors produce `INCONCLUSIVE`, not PASS.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for full-window sampling, survivor detection, marker mutation detection, output mutation detection and no early-success return before the declared observation duration.
+- [x] Run the focused tests and confirm failure because the module is absent.
+- [x] Implement a minimal observer that always completes the full window unless a probe itself errors; probe errors produce `INCONCLUSIVE`, not PASS.
+- [x] Re-run focused tests to green.
 
 ### Task 4: Contract verification and handoff boundary
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-31-spike-1-boundary-contracts.md`
 
-- [ ] Run all three focused suites plus syntax checks for the new modules.
-- [ ] Verify no Windows Job Object source, `taskkill`, PID-tree inference, real Codex start or product state machine was introduced.
-- [ ] Record that the next increment is a minimal Windows native Job Object helper using suspended creation/assignment plus an OS-backed independent probe; Windows evidence remains NOT RUN.
+- [x] Run all three focused suites plus syntax checks for the new modules.
+- [x] Verify no Windows Job Object source, `taskkill`, PID-tree inference, real Codex start or product state machine was introduced.
+- [x] Record that the next Windows increment is a minimal native Job Object helper using suspended creation/assignment plus an OS-backed independent probe; Windows evidence remains NOT RUN.
 
 ## Verification boundary
 
 Green reducer/observer tests mean the evidence/state contracts are executable and deterministic. They do **not** prove R-02/R-04/R-05/R-06/R-07/R-08, zero survivors, drain correctness or Windows Job Object behavior. Those remain `NOT RUN` until a target-Windows helper produces indexed raw evidence.
+
+## Current status
+
+Fresh verification for this increment on Node v22.16.0:
+
+- boundary protocol suite: **8/8 PASS**;
+- resource reconciliation suite: **10/10 PASS**;
+- independent post-stop observer suite: **6/6 PASS**;
+- combined new contract suites: **24/24 PASS**;
+- `node --check src/*.mjs` for the new modules: **PASS**;
+- Windows Job Object helper compile/run: **NOT RUN / NOT IMPLEMENTED in this increment**;
+- Spike 1 containment verdict: **NOT EVALUATED**.
+
+The next native design must create the target process suspended, establish the Job Object ownership boundary before user code runs, then resume execution; the independent observer must consume OS-backed process facts rather than infer ownership from a PID tree.
