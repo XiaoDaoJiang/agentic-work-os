@@ -34,10 +34,10 @@
 - `validateHostileScenario(document)` returns a normalized immutable scenario.
 - `createSeededDelays(seed, count, minMs, maxMs)` returns deterministic integer delays.
 
-- [ ] Write failing tests for role-neutral defaults, invalid negative delays/counts, allowed exit modes, and deterministic seeded delay generation.
-- [ ] Run focused tests and confirm failure because the module does not exist.
-- [ ] Implement the minimal validator and deterministic PRNG without dependencies.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for role-neutral defaults, invalid negative delays/counts, allowed exit modes, and deterministic seeded delay generation.
+- [x] Run focused tests and confirm failure because the module does not exist.
+- [x] Implement the minimal validator and deterministic PRNG without dependencies.
+- [x] Re-run focused tests to green.
 
 ### Task 2: Hostile process executable
 
@@ -50,10 +50,10 @@
 - Writes control JSONL events containing `event`, `role`, `pid`, `ppid`, monotonic/high-resolution timestamp and event payload.
 - Parent may spawn child; child may spawn grandchild; descendants receive the same scenario/control/marker paths.
 
-- [ ] Write failing integration tests for cwd/argv/stdout/stderr, stdin nonce acknowledgement, child/grandchild observation, normal/nonzero exit, and hang mode terminated by the test harness.
-- [ ] Run the focused tests and confirm the fixture is absent.
-- [ ] Implement minimal role execution, raw stream writes, stdin handling, descendant spawning, and exit modes.
-- [ ] Re-run focused tests to green.
+- [x] Write failing integration tests for cwd/argv/stdout/stderr, stdin nonce acknowledgement, child/grandchild observation, normal/nonzero exit, and hang mode terminated by the test harness.
+- [x] Run the focused tests and confirm the fixture is absent.
+- [x] Implement minimal role execution, raw stream writes, stdin handling, descendant spawning, and exit modes.
+- [x] Re-run focused tests to green.
 
 ### Task 3: Marker and hostile timing behavior
 
@@ -65,10 +65,10 @@
 - Scenario supports finite `markerWrites`, `markerIntervalMs`, optional `lateWriteDelayMs`, `rootExitBeforeDescendants`, and `delayedDescendantMs`.
 - Marker lines include role, PID, sequence and timestamp; marker path is rejected if outside the disposable root.
 
-- [ ] Add failing tests for deterministic marker writes, path escape rejection, delayed descendant creation, root-early-exit behavior, and a configured late write after a soft-stop signal.
-- [ ] Run focused tests and confirm the new cases fail.
-- [ ] Implement only the declared hostile behavior.
-- [ ] Re-run focused tests to green and verify all spawned descendants are cleaned up by the tests.
+- [x] Add failing tests for deterministic marker writes, path escape rejection, delayed descendant creation, root-early-exit behavior, and a configured late write after a soft-stop signal.
+- [x] Run focused tests and confirm marker/root-early/late-write cases fail before implementation.
+- [x] Implement only the declared hostile behavior.
+- [x] Re-run focused tests to green and verify spawned descendants are cleaned up by the test harness or finish on their own.
 
 ### Task 4: Fixture CLI discovery and documentation
 
@@ -81,11 +81,22 @@
 - Add `hostile-fixture-plan --scenario <file> --seed <integer>` to print the validated scenario and frozen derived delays without spawning a process.
 - README documents direct fixture execution only as a disposable diagnostic tool; the future Runner remains responsible for ownership and cancellation.
 
-- [ ] Add a failing CLI test for scenario validation/derived timing without process spawn.
-- [ ] Implement the diagnostic command and example scenario.
-- [ ] Run the full relevant M0 test suite and `node --check src/*.mjs fixtures/*.mjs`.
-- [ ] Record that fixture behavior is verified, but Spike 1 R-02/R-06/R-07/R-08 containment verdicts remain NOT RUN until the Windows Runner boundary exists.
+- [x] Add a failing CLI test for scenario validation/derived timing without process spawn.
+- [x] Implement the diagnostic command and example scenario.
+- [x] Run the full relevant M0 test suite and `node --check src/*.mjs fixtures/*.mjs`.
+- [x] Record that fixture behavior is verified, but Spike 1 R-02/R-06/R-07/R-08 containment verdicts remain NOT RUN until the Windows Runner boundary exists.
 
 ## Verification boundary
 
 Passing fixture tests only proves that the adversarial stimulus is deterministic and observable. It cannot prove process ownership, full-tree cancellation, zero survivors, drain barriers, resource reconciliation, or any Spike 1 PASS criterion. Those require the next Runner/boundary increment and target-Windows evidence.
+
+## Current status
+
+Fresh verification on the available non-Windows host:
+
+- full relevant M0 suite: **37/37 PASS**;
+- `node --check src/*.mjs fixtures/*.mjs`: **PASS**;
+- `test/hostile-process.test.mjs` repeated three additional times: **PASS each run**;
+- real Codex starts: **none**;
+- Windows process-boundary ownership / Cancel / zero-survivor evidence: **NOT RUN**;
+- Spike 1 verdict: **NOT EVALUATED**.
