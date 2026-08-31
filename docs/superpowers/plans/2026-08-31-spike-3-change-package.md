@@ -33,10 +33,10 @@
 - `computeResultTreeHash({ workspace, baseRevision, gitExecutable })` uses a temporary `GIT_INDEX_FILE` and returns `{ objectFormat, resultTreeHash }`.
 - `collectWorkspaceChanges({ workspace, baseRevision, gitExecutable })` returns sorted delete/upsert entries with path/mode/size/hash/bytes.
 
-- [ ] Write failing tests with text/binary, spaces/Chinese paths, modification, deletion, untracked file and rename-as-delete+add.
-- [ ] Confirm real index hash/status are unchanged after both helpers.
-- [ ] Implement NUL-safe Git discovery and temp-index tree hashing.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests with text/binary, spaces/Chinese paths, modification, deletion, untracked file and rename-as-delete+add.
+- [x] Confirm real index hash/status are unchanged after both helpers.
+- [x] Implement NUL-safe Git discovery and temp-index tree hashing.
+- [x] Re-run focused tests to green.
 
 ### Task 2: Deterministic package encode/validate
 
@@ -48,9 +48,9 @@
 - `buildChangePackage({...})` returns `{ bytes, sha256, manifest }`.
 - `validateChangePackageBytes(bytes)` returns parsed/validated package or throws before replay.
 
-- [ ] Write failing tests for CP-01/CP-03 deterministic coverage, sealed evidence refs, payload hash/size, duplicate paths and malformed/tampered bytes.
-- [ ] Implement canonical sorted encoding and full preflight validation.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for CP-01/CP-03 deterministic coverage, sealed evidence refs, payload hash/size, duplicate paths and malformed/tampered bytes.
+- [x] Implement canonical sorted encoding and full preflight validation.
+- [x] Re-run focused tests to green.
 
 ### Task 3: Clean-checkout replay
 
@@ -61,9 +61,9 @@
 **Interfaces:**
 - `replayChangePackage({ bytes, checkout, gitExecutable })` validates package/base, applies operations, recomputes tree and returns replay evidence.
 
-- [ ] Write failing tests for CP-05 same result tree after original Workspace deletion, CP-07 wrong base rejected before mutation and CP-08 tampering rejected before mutation.
-- [ ] Implement replay with all payload validation completed before the first write/delete.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for CP-05 same result tree after original Workspace deletion, CP-07 wrong base rejected before mutation and CP-08 tampering rejected before mutation.
+- [x] Implement replay with all payload validation completed before the first write/delete.
+- [x] Re-run focused tests to green.
 
 ### Task 4: Unique package seal and immutable Review binding
 
@@ -74,22 +74,42 @@
 **Interfaces:**
 - `sealUniqueChangePackage({ db, store, runId, artifactId, packageBytes })` wraps the Artifact seal protocol.
 
-- [ ] Write failing tests for CP-02 ordering prerequisites, CP-09 same-Run idempotency/no second Package and CP-10 post-Review reseal rejection.
-- [ ] Implement strict prerequisite/uniqueness/decision guards and seal through existing Artifact Store.
-- [ ] Re-run focused tests to green.
+- [x] Write failing tests for CP-02 ordering prerequisites, CP-09 same-Run idempotency/no second Package and CP-10 post-Review reseal rejection.
+- [x] Implement strict prerequisite/uniqueness/decision guards and seal through existing Artifact Store.
+- [x] Re-run focused tests to green.
 
 ### Task 5: Verification replay binding and handoff
 
 **Files:**
 - Create: `experiments/milestone-0/src/verification-replay.mjs`
 - Create: `experiments/milestone-0/test/verification-replay.test.mjs`
+- Create: `experiments/milestone-0/test/delivery-integrity-change-package.test.mjs`
 - Modify: `docs/superpowers/plans/2026-08-31-spike-3-change-package.md`
 
-- [ ] Write tests proving CP-06 only rebinds `cwd_binding=assigned_workspace` to the replay checkout while execution/env/timeout/output/cancel contract bytes stay equivalent.
-- [ ] Run all Spike 3 focused suites plus syntax checks.
-- [ ] Feed the real package validator/replay validator into Spike 4 delivery-integrity tests, replacing stub success validators for integrated evidence.
-- [ ] Record CP-11 drift gate as a separate cross-contract dependency; no Accept/Delivery claim without drift evidence.
+- [x] Write tests proving CP-06 only rebinds `cwd_binding=assigned_workspace` to the replay checkout while execution/env/timeout/output/cancel contract bytes stay equivalent.
+- [x] Run all Spike 3 focused suites plus syntax checks.
+- [x] Feed the real package validator/replay validator into Spike 4 delivery-integrity tests for integrated healthy-delivery evidence.
+- [x] Record CP-11 drift gate as a separate cross-contract dependency; no Accept/Delivery claim without drift evidence.
+
+## Execution record — 2026-08-31
+
+- Implementation commit: `50c137e35b9d4ac9ecf2c0f47a35a4520f6bca45`.
+- TDD RED was observed separately for `git-result-tree`, `change-package`, `change-package-replay`, `change-package-seal`, and `verification-replay` before their production modules existed.
+- Fresh focused verification on Node `v22.16.0`: **17/17 tests PASS**.
+- Fresh syntax verification: `node --check src/*.mjs` for the reconstructed Spike 3 dependency set completed without errors.
+- The integrated F-10 path uses the real `validateChangePackageBytes()` and a real fresh-checkout `replayChangePackage()` instead of success stubs.
+- CP-11 remains a separate drift-gate dependency. This implementation does not authorize Accept/Delivery when registered source/workspace drift is abnormal.
 
 ## Verification boundary
 
-Passing cross-platform Git/package/replay tests proves the candidate format can encode/rebuild the declared Git fixture and bind evidence. Spike 3 PASS still requires indexed evidence, integration with Spike 4 sealed bytes/reconciliation, the frozen VerificationInvocation replay, and the relevant drift gate. The format remains experimental until Technical Gate selection.
+Passing cross-platform Git/package/replay tests proves the candidate format can encode/rebuild the declared Git fixture and bind sealed evidence. It does **not** by itself make Spike 3 `PASS`.
+
+Final Spike 3 PASS still requires:
+
+1. indexed raw Change Package/replay evidence under a Milestone 0 experiment run;
+2. the relevant Spike 4 sealed-byte and reconciliation evidence;
+3. frozen VerificationInvocation replay evidence;
+4. the independent drift gate required by CP-11;
+5. no hard-fail condition from the Technical Gate scan.
+
+Until those conditions are present, the candidate implementation is **READY_FOR_EVIDENCE / verdict NOT EVALUATED**, and `change-package-v0` remains an experimental format rather than a production schema.
