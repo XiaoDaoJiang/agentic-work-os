@@ -4,7 +4,7 @@
 
 **Goal:** Turn the frozen `repo-local-git-v0` contract into an executable Windows repository-identity helper and RI-01..RI-11 experiment matrix without claiming Windows evidence before it is actually run.
 
-**Architecture:** Keep the SHA-256 encoding pure and dependency-free. Resolve Git facts in Node, obtain Windows `FILE_ID_INFO` and final/short paths through a small PowerShell P/Invoke helper, then compose both into one fail-closed repository identity result. A separate matrix runner creates only disposable Git fixtures and writes machine-readable case results; it refuses to run RI-01..RI-10 off Windows.
+**Architecture:** Keep the SHA-256 encoding pure and dependency-free. Resolve Git facts in Node, obtain Windows `FILE_ID_INFO` and final/short paths through a small PowerShell P/Invoke helper, then compose both into one fail-closed repository identity result. A separate matrix runner creates only disposable Git fixtures and writes machine-readable case results; it never infers RI-01..RI-10 PASS off Windows.
 
 **Tech Stack:** Node.js >=20 built-ins, `git`, Windows PowerShell 5.1+ P/Invoke to Kernel32, `node:test`.
 
@@ -34,10 +34,10 @@
 - Produces: `computeLocalRepositoryIdentity(inputPath, options)` returning audit fields, raw file identity, and final `repositoryIdentity`.
 - Consumes: an injected async `fileIdentityResolver(commonDir)` so Git semantics are unit-testable on non-Windows hosts.
 
-- [ ] **Step 1: Write failing tests** covering root/subdirectory/relative path discovery, linked-worktree common-dir reuse, independent clone common-dir separation, and fail-closed behavior for non-Git paths.
-- [ ] **Step 2: Run `node --test test/repository-identity-core.test.mjs`** and confirm failure because the new exports do not exist.
-- [ ] **Step 3: Implement the minimal Git resolver and identity composition** with `execFile`, no shell interpolation, one `rev-parse` command per lookup, strict two-line output validation, and no fallback identity.
-- [ ] **Step 4: Re-run the focused test** and require all cases to pass.
+- [x] **Step 1: Write failing tests** covering root/subdirectory/relative path discovery, linked-worktree common-dir reuse, independent clone common-dir separation, and fail-closed behavior for non-Git paths.
+- [x] **Step 2: Run `node --test test/repository-identity-core.test.mjs`** and confirm failure because the new exports do not exist.
+- [x] **Step 3: Implement the minimal Git resolver and identity composition** with `execFile`, no shell interpolation, one `rev-parse` command per lookup, strict two-line output validation, and no fallback identity.
+- [x] **Step 4: Re-run the focused test** and require all cases to pass.
 
 ### Task 2: Windows FILE_ID_INFO helper
 
@@ -51,10 +51,10 @@
 - Produces: `getWindowsShortPath(targetPath, options)` returning a short-path alias when Windows exposes one, otherwise `null`.
 - The PowerShell helper supports `file-id` and `short-path` operations and emits exactly one compact JSON object.
 
-- [ ] **Step 1: Write failing wrapper tests** for platform guard, JSON validation, lowercase fixed-width hex validation, and native-command failure propagation using an injected executor.
-- [ ] **Step 2: Run the focused test** and confirm it fails because the wrapper is absent.
-- [ ] **Step 3: Implement the Node wrapper and PowerShell P/Invoke helper** using `CreateFileW` with directory backup semantics, `GetFileInformationByHandleEx(FileIdInfo)`, `GetFinalPathNameByHandleW`, and `GetShortPathNameW`.
-- [ ] **Step 4: Re-run focused tests and `node --check src/*.mjs`**. Record that the PowerShell P/Invoke still requires real Windows execution before any RI verdict.
+- [x] **Step 1: Write failing wrapper tests** for platform guard, JSON validation, lowercase fixed-width hex validation, and native-command failure propagation using an injected executor.
+- [x] **Step 2: Run the focused test** and confirm it fails because the wrapper is absent.
+- [x] **Step 3: Implement the Node wrapper and PowerShell P/Invoke helper** using `CreateFileW` with directory backup semantics, `GetFileInformationByHandleEx(FileIdInfo)`, `GetFinalPathNameByHandleW`, and `GetShortPathNameW`.
+- [x] **Step 4: Re-run focused tests and `node --check src/*.mjs`**. The PowerShell P/Invoke still requires real Windows execution before any RI verdict.
 
 ### Task 3: RI-01..RI-11 disposable matrix runner
 
@@ -68,10 +68,10 @@
 - Produces JSON with matrix version, platform, per-case `PASS | FAIL | INCONCLUSIVE`, evidence details, and an overall verdict calculated by strict conjunction.
 - Adds CLI commands `repository-identity` and `repository-identity-matrix`.
 
-- [ ] **Step 1: Write failing matrix tests** for the complete RI ID set, strict overall verdict reduction, and non-Windows refusal/inconclusive handling.
-- [ ] **Step 2: Run focused tests** and confirm failure because the matrix runner is absent.
-- [ ] **Step 3: Implement disposable Git fixture helpers and cases:** RI-01 path variants; RI-02 case/separator plus short-path alias; RI-03 junction; RI-04 linked worktree; RI-05 same-origin independent clones; RI-06 same-volume rename; RI-07 re-clone; RI-08 delete/rebuild same path; RI-09 nested repository; RI-10 explicit native/Git failure; RI-11 frozen vector.
-- [ ] **Step 4: Re-run focused tests and syntax checks.** Do not map an unavailable Windows short-path alias to PASS; record RI-02 as `INCONCLUSIVE` until the full declared variation is observed.
+- [x] **Step 1: Write failing matrix tests** for the complete RI ID set, strict overall verdict reduction, and non-Windows refusal/inconclusive handling.
+- [x] **Step 2: Run focused tests** and confirm failure because the matrix runner is absent.
+- [x] **Step 3: Implement disposable Git fixture helpers and cases:** RI-01 path variants; RI-02 case/separator plus short-path alias; RI-03 junction; RI-04 linked worktree; RI-05 same-origin independent clones; RI-06 same-volume rename; RI-07 re-clone; RI-08 delete/rebuild same path; RI-09 nested repository; RI-10 explicit native/Git failure; RI-11 frozen vector.
+- [x] **Step 4: Re-run focused tests and syntax checks.** An unavailable Windows short-path alias maps RI-02 to `INCONCLUSIVE`, never PASS.
 
 ### Task 4: Usage documentation and evidence discipline
 
@@ -81,10 +81,18 @@
 **Interfaces:**
 - Documents exact Windows commands to compute one identity and run the matrix into `evidence/milestone-0/<experiment_run_id>/cross-contracts/repository-identity/`.
 
-- [ ] **Step 1: Document prerequisites and commands** without implying RI execution occurred.
-- [ ] **Step 2: Run focused Node tests plus `npm run check`.** If the host is not Windows, explicitly record Windows RI-01..RI-10 as not executed rather than PASS.
-- [ ] **Step 3: Review the diff against RI-01..RI-11 and confirm no product UI, Codex start, production schema, or path/remote fallback was introduced.
+- [x] **Step 1: Document prerequisites and commands** without implying RI execution occurred.
+- [x] **Step 2: Run focused Node tests plus syntax checks.** Fresh verification on the available non-Windows host: 22/22 tests passed; `node --check src/*.mjs` passed; RI-11 matched the frozen vector; the matrix exited `2` with overall `INCONCLUSIVE`, RI-01..RI-10 `INCONCLUSIVE`, RI-11 `PASS`.
+- [x] **Step 3: Review the repository changes against RI-01..RI-11** and confirm no product UI, real Codex start, production schema/API, or path/remote fallback was introduced.
 
 ## Verification boundary
 
 A green Node test suite on Linux/macOS means the helper contracts and matrix orchestration are internally consistent. It does **not** satisfy Technical Gate RI-01..RI-10. M0-01 only reaches an RI verdict after the matrix is executed on the target Windows environment and its raw evidence is indexed by the M0 harness.
+
+## Current status
+
+- Implementation and cross-platform contract tests: complete.
+- RI-11 deterministic vector: PASS in unit verification.
+- RI-01..RI-10 target-Windows execution: NOT RUN.
+- Repository-identity cross-cutting contract verdict: INCONCLUSIVE until target-Windows evidence exists.
+- Technical Gate: NOT EVALUATED by M0-01.
