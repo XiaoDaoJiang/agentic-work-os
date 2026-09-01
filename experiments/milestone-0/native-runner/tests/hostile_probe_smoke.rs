@@ -102,19 +102,39 @@ fn cancel_smoke_uses_independent_pid_observation_before_cleanup() {
         summary["actual_mechanism"]
             .as_str()
             .is_some_and(|value| !value.is_empty()),
-        "actual ProcessKit group mechanism is required"
+        "actual ProcessKit group mechanism is required; summary={summary:#?}"
     );
     assert!(
         summary["root_pid"].as_u64().is_some(),
-        "root pid is required"
+        "root pid is required; summary={summary:#?}"
     );
-    assert_eq!(summary["stdout_drained"], true);
-    assert_eq!(summary["stderr_drained"], true);
-    assert_eq!(summary["observation_window_complete"], true);
-    assert_eq!(summary["observer_complete"], true);
-    assert_eq!(summary["survivor_pids"], serde_json::json!([]));
-    assert_eq!(summary["cleanup_succeeded"], true);
-    assert_eq!(summary["physical_verdict"], "PASS");
+    assert_eq!(summary["stdout_drained"], true, "summary={summary:#?}");
+    assert_eq!(summary["stderr_drained"], true, "summary={summary:#?}");
+    assert_eq!(
+        summary["observation_window_complete"],
+        true,
+        "summary={summary:#?}"
+    );
+    assert_eq!(
+        summary["observer_complete"],
+        true,
+        "summary={summary:#?}"
+    );
+    assert_eq!(
+        summary["survivor_pids"],
+        serde_json::json!([]),
+        "summary={summary:#?}"
+    );
+    assert_eq!(
+        summary["cleanup_succeeded"],
+        true,
+        "summary={summary:#?}"
+    );
+    assert_eq!(
+        summary["physical_verdict"],
+        "PASS",
+        "summary={summary:#?}"
+    );
 
     fs::remove_dir_all(&root).expect("remove disposable root");
 }
