@@ -1,0 +1,20 @@
+instance_id: ORBIS-PR-13
+selection_rule_position: I02
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/13
+fit_classification: natural_fit
+giant_task_required: false
+special_fk_required: false
+ambiguous_ownership: false
+exception_lifecycle_required: false
+known_fact_mapping:
+  objective_owner: one_pr_level_engineering_objective
+  verification_events: uniquely_attributable
+  artifact_ownership: unique
+  final_decision_ownership: unique
+unresolved:
+  run_attempt_boundary: unknown
+  native_session_ownership: unknown
+  local_workspace_lifecycle: unknown
+trajectory_evidence: []
+fit_rationale: >-
+  Weekly schema, reading and diagnostic checkpoints remain evidence under one engineering objective. No known fact needs a giant Task, special foreign key, ambiguous center ownership or lifecycle exception; Agent Run and Workspace boundaries remain unproven.
