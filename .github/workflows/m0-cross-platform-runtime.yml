@@ -67,6 +67,7 @@ jobs:
           test/repository-marker-cli.test.mjs
           test/runner-contract.test.mjs
           test/runner-client.test.mjs
+          test/processkit-hostile-matrix.test.mjs
           test/workflow-structure.test.mjs
 
       - name: Check Node module syntax
