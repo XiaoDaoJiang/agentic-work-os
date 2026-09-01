@@ -58,6 +58,7 @@ jobs:
           test/repository-marker.test.mjs
           test/repository-marker-cli.test.mjs
           test/runner-contract.test.mjs
+          test/runner-client.test.mjs
 
       - name: Check Node module syntax
         working-directory: experiments/milestone-0
