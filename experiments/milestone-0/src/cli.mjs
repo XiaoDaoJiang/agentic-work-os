@@ -6,6 +6,7 @@ import { sha256File } from './hash.mjs';
 import { createManifest, indexEvidenceFile, writeManifest } from './manifest.mjs';
 import { createDisposableFixture } from './fixture.mjs';
 import { ensureRepositoryMarker } from './repository-marker.mjs';
+import { runNativeRunnerDoctor } from './runner-client.mjs';
 import {
   computeLocalRepositoryIdentity,
   computeRepositoryIdentityVector,
@@ -66,6 +67,14 @@ async function init(args) {
   });
   await writeManifest(manifestPath, manifest);
   process.stdout.write(`${JSON.stringify({ experimentRunId, runRoot, manifestPath }, null, 2)}\n`);
+}
+
+async function runnerDoctor(args) {
+  const options = parseOptions(args);
+  if (!options.executable) throw new Error('--executable is required');
+  const result = await runNativeRunnerDoctor({ executable: path.resolve(options.executable) });
+  if (result.stderr.length > 0) process.stderr.write(result.stderr);
+  process.stdout.write(`${JSON.stringify(result.capabilities, null, 2)}\n`);
 }
 
 async function repositoryMarker(args) {
@@ -130,6 +139,10 @@ async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'hostile-fixture-plan') {
     await hostileFixturePlan(args);
+    return;
+  }
+  if (command === 'runner-doctor') {
+    await runnerDoctor(args);
     return;
   }
   if (command === 'repository-marker') {

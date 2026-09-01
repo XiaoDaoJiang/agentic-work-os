@@ -90,30 +90,16 @@ jobs:
       - name: Build native runner
         run: cargo build --manifest-path experiments/milestone-0/native-runner/Cargo.toml
 
-      - name: Run spawn-free capability doctor
+      - name: Run native runner doctor through Node harness
         working-directory: experiments/milestone-0
         shell: bash
         run: |
-          node <<'NODE'
-          const { writeFileSync } = require('node:fs');
-          const { spawnSync } = require('node:child_process');
-          const executable = process.platform === 'win32'
-            ? 'native-runner/target/debug/agentic-native-runner.exe'
-            : 'native-runner/target/debug/agentic-native-runner';
-          const result = spawnSync(executable, ['doctor'], { encoding: 'utf8' });
-          if (result.error) throw result.error;
-          if (result.status !== 0) {
-            process.stderr.write(result.stderr);
-            process.exit(result.status ?? 1);
-          }
-          const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
-          if (lines.length !== 1) throw new Error(`doctor must emit exactly one JSON line; got ${lines.length}`);
-          const document = JSON.parse(lines[0]);
-          if (document.capability_version !== 'runner-capabilities-v0') {
-            throw new Error('unexpected capability version');
-          }
-          writeFileSync('doctor.json', `${JSON.stringify(document, null, 2)}\n`, 'utf8');
-          NODE
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            executable="native-runner/target/debug/agentic-native-runner.exe"
+          else
+            executable="native-runner/target/debug/agentic-native-runner"
+          fi
+          node src/cli.mjs runner-doctor --executable "$executable" > doctor.json
 
       - name: Upload generated Cargo lock
         if: always()
