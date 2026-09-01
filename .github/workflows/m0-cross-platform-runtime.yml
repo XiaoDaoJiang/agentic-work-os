@@ -22,6 +22,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PROCESSKIT_VERSION: "3.3.4"
 
 jobs:
   foundation:
@@ -59,6 +60,7 @@ jobs:
           test/repository-marker-cli.test.mjs
           test/runner-contract.test.mjs
           test/runner-client.test.mjs
+          test/workflow-structure.test.mjs
 
       - name: Check Node module syntax
         working-directory: experiments/milestone-0
@@ -75,20 +77,26 @@ jobs:
           }
           NODE
 
-      - name: Resolve Rust dependency lock
-        run: cargo generate-lockfile --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+      - name: Validate committed Rust dependency lock
+        shell: bash
+        run: >-
+          cargo metadata --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --format-version 1
+          --no-deps
+          > /dev/null
 
       - name: Run Rust tests
-        run: cargo test --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+        run: cargo test --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
 
       - name: Run Rust Clippy
-        run: cargo clippy --manifest-path experiments/milestone-0/native-runner/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --all-targets -- -D warnings
 
       - name: Build native runner
-        run: cargo build --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+        run: cargo build --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml
 
       - name: Run native runner doctor through Node harness
         working-directory: experiments/milestone-0
@@ -101,7 +109,7 @@ jobs:
           fi
           node src/cli.mjs runner-doctor --executable "$executable" > doctor.json
 
-      - name: Upload generated Cargo lock
+      - name: Upload committed Cargo lock
         if: always()
         uses: actions/upload-artifact@v7
         with:
