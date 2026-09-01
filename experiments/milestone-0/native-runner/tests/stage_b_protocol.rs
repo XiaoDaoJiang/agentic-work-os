@@ -2,8 +2,8 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
 use agentic_native_runner::event_writer::EventWriter;
-use agentic_native_runner::protocol::{encode_base64, parse_stage_b_batch, ProtocolError};
-use serde_json::{json, Value};
+use agentic_native_runner::protocol::{ProtocolError, encode_base64, parse_stage_b_batch};
+use serde_json::{Value, json};
 
 const START: &str = r#"{"protocol":"local-runner-jsonl-v0","kind":"start","request_id":"start-1","run_id":"run-1","program":"/absolute/program","argv":["arg"],"cwd":"/absolute/cwd","env":{"inheritance_policy":"none","inherit_names":[],"overrides":{},"unset":[]},"timeout_ms":1000}"#;
 const FINISH: &str = r#"{"protocol":"local-runner-jsonl-v0","kind":"finish_input","request_id":"finish-1","run_id":"run-1"}"#;
@@ -19,7 +19,10 @@ impl SharedBuffer {
 
 impl Write for SharedBuffer {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().expect("buffer mutex").extend_from_slice(bytes);
+        self.0
+            .lock()
+            .expect("buffer mutex")
+            .extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
@@ -36,7 +39,8 @@ fn parses_empty_and_non_empty_finite_batches() {
     assert!(empty.inputs.is_empty());
 
     let input = r#"{"protocol":"local-runner-jsonl-v0","kind":"input","request_id":"input-1","run_id":"run-1","bytes_base64":"aGVsbG8="}"#;
-    let populated = parse_stage_b_batch(&format!("{START}\n{input}\n{FINISH}\n")).expect("input batch");
+    let populated =
+        parse_stage_b_batch(&format!("{START}\n{input}\n{FINISH}\n")).expect("input batch");
     assert_eq!(populated.stdin_bytes, b"hello");
     assert_eq!(populated.inputs[0].request_id, "input-1");
     assert_eq!(populated.inputs[0].byte_length, 5);
@@ -83,8 +87,16 @@ fn base64_encoder_uses_standard_canonical_padding() {
 fn event_writer_serializes_atomic_monotonic_json_lines() {
     let buffer = SharedBuffer::default();
     let writer = EventWriter::new(buffer.clone());
-    writer.emit("run-1", "runner.ready", json!({})).expect("first event");
-    writer.emit("run-1", "capabilities.reported", json!({"mechanism":"test"})).expect("second event");
+    writer
+        .emit("run-1", "runner.ready", json!({}))
+        .expect("first event");
+    writer
+        .emit(
+            "run-1",
+            "capabilities.reported",
+            json!({"mechanism":"test"}),
+        )
+        .expect("second event");
 
     let lines: Vec<Value> = buffer
         .text()
@@ -95,5 +107,9 @@ fn event_writer_serializes_atomic_monotonic_json_lines() {
     assert_eq!(lines[0]["sequence"], 1);
     assert_eq!(lines[1]["sequence"], 2);
     assert_eq!(lines[0]["protocol"], "local-runner-jsonl-v0");
-    assert!(lines.iter().all(|line| line["at"].as_str().is_some_and(|at| at.ends_with('Z'))));
+    assert!(
+        lines
+            .iter()
+            .all(|line| line["at"].as_str().is_some_and(|at| at.ends_with('Z')))
+    );
 }

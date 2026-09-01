@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::AsyncWrite;
 
-use crate::protocol::{encode_base64, RUNNER_PROTOCOL};
+use crate::protocol::{RUNNER_PROTOCOL, encode_base64};
 
 struct WriterState {
     output: Box<dyn Write + Send>,
@@ -172,8 +172,7 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     } / 146_097;
     let day_of_era = shifted - era * 146_097;
     let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096)
-            / 365;
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let mut year = year_of_era + era * 400;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
