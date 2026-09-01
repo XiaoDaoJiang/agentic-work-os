@@ -1,0 +1,162 @@
+name: M0 certify cross-platform Stage B
+
+on:
+  push:
+    branches:
+      - spike/milestone-0-stage-b
+    paths:
+      - .github/workflows/m0-cross-platform-stage-b-certify.yml
+      - experiments/milestone-0/fixtures/stage-b-child.mjs
+      - experiments/milestone-0/src/stage-b-client.mjs
+      - experiments/milestone-0/test/stage-b-runner.integration.test.mjs
+      - experiments/milestone-0/native-runner/src/bin/stage-b-runner.rs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  stage-b:
+    name: Stage B certify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22.16.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.16.0
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Check Node syntax
+        working-directory: experiments/milestone-0
+        run: >-
+          node --check fixtures/stage-b-child.mjs
+          && node --check src/stage-b-client.mjs
+          && node --check test/stage-b-runner.integration.test.mjs
+
+      - name: Run Stage B Rust unit tests
+        run: >-
+          cargo test --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
+
+      - name: Run Rust Clippy
+        run: >-
+          cargo clippy --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+          -- -D warnings
+
+      - name: Build Stage B runner
+        run: >-
+          cargo build --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+
+      - name: Configure Stage B paths
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_ENV"
+          const path = require('node:path');
+          const executable = path.resolve(
+            'native-runner',
+            'target',
+            'debug',
+            process.platform === 'win32' ? 'stage-b-runner.exe' : 'stage-b-runner'
+          );
+          console.log(`STAGE_B_RUNNER=${executable}`);
+          console.log(`STAGE_B_SUMMARY=${path.resolve('stage-b-summary.json')}`);
+          NODE
+
+      - name: Run common Stage B integration suite
+        working-directory: experiments/milestone-0
+        run: node --test test/stage-b-runner.integration.test.mjs
+
+      - name: Upload platform summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: certified-stage-b-summary-${{ matrix.os }}
+          path: experiments/milestone-0/stage-b-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  certify:
+    name: Record Stage B matrix success
+    needs:
+      - stage-b
+    if: ${{ success() }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out latest Stage B branch
+        uses: actions/checkout@v6
+        with:
+          ref: spike/milestone-0-stage-b
+          fetch-depth: 0
+
+      - name: Record certified matrix result
+        shell: bash
+        run: |
+          mkdir -p experiments/milestone-0/docs
+          cat > experiments/milestone-0/docs/stage-b-ci-pass.md <<EOF
+          # Stage B Cross-platform CI Certification
+
+          - Workflow: \`M0 certify cross-platform Stage B\`
+          - Workflow run ID: \`${GITHUB_RUN_ID}\`
+          - Workflow run attempt: \`${GITHUB_RUN_ATTEMPT}\`
+          - Source SHA tested by the matrix: \`${GITHUB_SHA}\`
+          - Recorded at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`
+          - Matrix images: \`ubuntu-24.04\`, \`windows-2025\`, \`macos-15\`
+          - Node: \`22.16.0\`
+          - Rust: \`1.88.0\`
+          - Matrix dependency result: \`${{ needs.stage-b.result }}\`
+
+          ## Certified scope
+
+          All three jobs completed Rust unit tests, formatting, Clippy with warnings denied, native build, and the same Node integration suite for:
+
+          - argv and absolute working directory;
+          - explicit environment inheritance/overrides;
+          - finite initial stdin;
+          - separately ordered stdout and stderr byte frames;
+          - normal and nonzero exit facts;
+          - finite timeout.
+
+          ## Explicit boundary
+
+          Stage B intentionally reports \`containment_applied=false\` and \`observation_scope=root_only\`. This file does not establish descendant containment, live Cancel, zero survivors, post-stop stability, real Codex support, Spike 1 PASS, or Technical Gate PASS.
+          EOF
+
+      - name: Commit certification only after the complete matrix succeeds
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/milestone-0/docs/stage-b-ci-pass.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "test(m0): certify Stage B three-platform transport"
+          git push origin HEAD:spike/milestone-0-stage-b
