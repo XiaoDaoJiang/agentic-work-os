@@ -136,7 +136,9 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     if args.len() != 2 || args[0] != "--candidate" {
-        return Err("usage: provider-probe --candidate <processkit|process-wrap|direct-os>".to_owned());
+        return Err(
+            "usage: provider-probe --candidate <processkit|process-wrap|direct-os>".to_owned(),
+        );
     }
     let report = match args[1].as_str() {
         "processkit" => processkit_report()?,

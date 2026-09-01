@@ -1,16 +1,22 @@
-use containment_provider_eval::{candidate_by_name, MechanismObservability, ProviderDisposition};
+use containment_provider_eval::{MechanismObservability, ProviderDisposition, candidate_by_name};
 
 #[test]
 fn freezes_the_three_candidate_set_and_required_versions() {
     let processkit = candidate_by_name("processkit").expect("processkit candidate");
     assert_eq!(processkit.version, "3.3.4");
     assert_eq!(processkit.license, "MIT");
-    assert_eq!(processkit.mechanism_observability, MechanismObservability::RuntimeReported);
+    assert_eq!(
+        processkit.mechanism_observability,
+        MechanismObservability::RuntimeReported
+    );
 
     let process_wrap = candidate_by_name("process-wrap").expect("process-wrap candidate");
     assert_eq!(process_wrap.version, "10.0.0");
     assert_eq!(process_wrap.license, "Apache-2.0 OR MIT");
-    assert_eq!(process_wrap.mechanism_observability, MechanismObservability::ConfiguredOnly);
+    assert_eq!(
+        process_wrap.mechanism_observability,
+        MechanismObservability::ConfiguredOnly
+    );
 
     let direct = candidate_by_name("direct-os").expect("direct OS baseline");
     assert_eq!(direct.disposition, ProviderDisposition::FallbackBaseline);
@@ -40,7 +46,7 @@ fn selection_report_shape_is_machine_readable() {
         "integrated_timeout_cancel",
         "runtime_coupling",
         "maintenance_risk",
-        "disposition"
+        "disposition",
     ] {
         assert!(value.get(key).is_some(), "missing key {key}");
     }
