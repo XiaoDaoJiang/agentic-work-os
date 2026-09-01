@@ -5,6 +5,7 @@ import { createExperimentRunId } from './ids.mjs';
 import { sha256File } from './hash.mjs';
 import { createManifest, indexEvidenceFile, writeManifest } from './manifest.mjs';
 import { createDisposableFixture } from './fixture.mjs';
+import { ensureRepositoryMarker } from './repository-marker.mjs';
 import {
   computeLocalRepositoryIdentity,
   computeRepositoryIdentityVector,
@@ -67,6 +68,15 @@ async function init(args) {
   process.stdout.write(`${JSON.stringify({ experimentRunId, runRoot, manifestPath }, null, 2)}\n`);
 }
 
+async function repositoryMarker(args) {
+  const options = parseOptions(args);
+  if (!options.path) throw new Error('--path is required');
+  const result = await ensureRepositoryMarker(options.path, {
+    gitExecutable: options.git ?? 'git'
+  });
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
 async function repositoryIdentity(args) {
   const options = parseOptions(args);
   if (!options.path) throw new Error('--path is required');
@@ -120,6 +130,10 @@ async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'hostile-fixture-plan') {
     await hostileFixturePlan(args);
+    return;
+  }
+  if (command === 'repository-marker') {
+    await repositoryMarker(args);
     return;
   }
   if (command === 'repository-identity') {
