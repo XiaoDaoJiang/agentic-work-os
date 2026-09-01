@@ -39,15 +39,15 @@
 - `HostileEvidence` records scenario id, seed, repetition, platform/architecture, ProcessKit version, actual mechanism, trigger, root pid, `members_before`, `members_after`, fixture pids, survivors, stream byte counts, drain flags, marker/control snapshots, observation samples, cleanup result and verdict reasons.
 - `evaluate_physical_verdict(&HostileEvidence) -> HostileVerdict` returns FAIL for any survivor, late write, undrained stream or teardown error; INCONCLUSIVE for missing observer facts; PASS only when the observation window completed with zero survivors and stable files.
 
-- [ ] **Step 1: Write failing Rust contract tests** that construct synthetic evidence for PASS, survivor FAIL, late-write FAIL, undrained FAIL and missing-observer INCONCLUSIVE.
-- [ ] **Step 2: Run** `cargo test --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --test hostile_evidence` and confirm failure because `hostile_evidence` does not exist.
-- [ ] **Step 3: Implement the evidence types and pure verdict function only.** Do not spawn a process in this task.
-- [ ] **Step 4: Add the three frozen JSON scenarios:**
+- [x] **Step 1: Write failing Rust contract tests** that construct synthetic evidence for PASS, survivor FAIL, late-write FAIL, undrained FAIL and missing-observer INCONCLUSIVE.
+- [x] **Step 2: Run** `cargo test --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --test hostile_evidence` and confirm failure because `hostile_evidence` does not exist.
+- [x] **Step 3: Implement the evidence types and pure verdict function only.** Do not spawn a process in this task.
+- [x] **Step 4: Add the three frozen JSON scenarios:**
   - `tree-hang`: parent→child→grandchild, continuous stdout/stderr, hang;
   - `root-exit-detached`: same descendant tree with `rootExitBeforeDescendants=true`, hang, giving POSIX a deliberate new-session/process-group escape attempt;
   - `late-output-hang`: single root, continuous stdout/stderr, marker writes, hang.
-- [ ] **Step 5: Re-run the focused test, rustfmt and Clippy.**
-- [ ] **Step 6: Commit** `test(m0): freeze hostile physical evidence contract`.
+- [x] **Step 5: Re-run the focused test, rustfmt and Clippy.**
+- [x] **Step 6: Commit** `test(m0): freeze hostile physical evidence contract`.
 
 ### Task 2: Spawn the existing hostile fixture inside an actual ProcessKit group
 
@@ -63,13 +63,13 @@
 - The probe creates a `ProcessGroup`, records the actual mechanism, uses `group.spawn(tokio::process::Command)` for the Node parent, and starts stdout/stderr reader tasks before waiting or teardown.
 - The probe emits exactly one summary JSON line on stdout; fixture stdout/stderr are represented as byte counts/hashes in the summary and may additionally be written beneath the disposable root.
 
-- [ ] **Step 1: Write a failing integration smoke test** that launches the binary against `late-output-hang.json`, requests Cancel, and asserts the summary contains `actual_mechanism`, root pid, stream drain facts, and a completed observation window.
-- [ ] **Step 2: Run the focused integration test** and confirm failure because the binary does not exist.
-- [ ] **Step 3: Add direct Tokio features** `process`, `io-util`, `time`, `rt-multi-thread`, `macros`, `sync` while preserving the committed lock.
-- [ ] **Step 4: Implement minimal group spawn and two concurrent pipe drains.** `cancel` maps to `group.kill_all()` after `trigger_ms`; `timeout` waits until the deadline then calls `kill_all`; `natural` only waits for exit with a finite harness deadline.
-- [ ] **Step 5: Parse the fixture control JSONL after the root is reaped to collect all reported pids and roles.**
-- [ ] **Step 6: Re-run focused tests, rustfmt, Clippy and the existing cross-platform runtime suite.**
-- [ ] **Step 7: Commit** `feat(m0): run hostile fixture in ProcessKit group`.
+- [x] **Step 1: Write a failing integration smoke test** that launches the binary against `late-output-hang.json`, requests Cancel, and asserts the summary contains `actual_mechanism`, root pid, stream drain facts, and a completed observation window.
+- [x] **Step 2: Run the focused integration test** and confirm failure because the binary does not exist.
+- [x] **Step 3: Add direct Tokio features** `process`, `io-util`, `time`, `rt-multi-thread`, `macros`, `sync` while preserving the committed lock.
+- [x] **Step 4: Implement minimal group spawn and two concurrent pipe drains.** `cancel` maps to `group.kill_all()` after `trigger_ms`; `timeout` waits until the deadline then calls `kill_all`; `natural` only waits for exit with a finite harness deadline.
+- [x] **Step 5: Parse the fixture control JSONL after the root is reaped to collect all reported pids and roles.**
+- [x] **Step 6: Re-run focused tests, rustfmt, Clippy and the existing cross-platform runtime suite.**
+- [x] **Step 7: Commit** `feat(m0): run hostile fixture in ProcessKit group`.
 
 ### Task 3: Independent survivor observation and cleanup
 
@@ -78,14 +78,14 @@
 - Modify: `experiments/milestone-0/native-runner/tests/hostile_probe_smoke.rs`
 
 **Interfaces:**
-- `observe_fixture_pids(pids, duration=750ms, sample=50ms)` uses `processkit::process_is_alive` for every fixture pid parsed from the control log, independently of `group.members()`.
-- `cleanup_survivors(pids)` creates a separate cleanup `ProcessGroup`, calls `adopt_external(pid)` for each still-live foreign fixture pid, then `kill_all()`; cleanup facts are recorded separately from the experiment verdict and never erase the survivor failure.
+- `observe_fixture_pids(pids, duration=750ms, sample=50ms)` uses identity-aware ProcessKit process lookup/liveness for every fixture pid parsed from the control log, independently of `group.members()`.
+- cleanup uses a separate cleanup `ProcessGroup`, adopts each still-live foreign fixture pid, then `kill_all()`; cleanup facts are recorded separately from the experiment verdict and never erase the survivor failure.
 
-- [ ] **Step 1: Write a failing test** proving a synthetic/real escaped descendant remains a scenario FAIL even when cleanup succeeds afterward.
-- [ ] **Step 2: Implement independent liveness sampling and stable file size/hash samples for both control and marker files through the whole observation window.**
-- [ ] **Step 3: Implement cleanup-after-evidence using `adopt_external` + `kill_all`, refusing pid 0/current process.**
-- [ ] **Step 4: Run the focused tests and all Rust quality checks.**
-- [ ] **Step 5: Commit** `feat(m0): observe and clean hostile survivors`.
+- [x] **Step 1: Write a failing test** proving a synthetic/real escaped descendant remains a scenario FAIL even when cleanup succeeds afterward.
+- [x] **Step 2: Implement independent liveness sampling and stable file size/hash samples for both control and marker files through the whole observation window.**
+- [x] **Step 3: Implement cleanup-after-evidence using external-process adoption + `kill_all`, refusing unsafe/current-process identities.**
+- [x] **Step 4: Run the focused tests and all Rust quality checks.**
+- [x] **Step 5: Commit** `feat(m0): observe and clean hostile survivors`.
 
 ### Task 4: Execute R-02/R-03/R-06/R-08 physical matrix
 
@@ -99,15 +99,15 @@
 - Race cases freeze 50 repetitions and seeds `0..49` before the first evidence-producing run.
 - Matrix result separates `harness_status` from `scenario_verdict`.
 
-- [ ] **Step 1: Write failing Node tests** for matrix expansion, frozen repetitions/seeds, argv construction and the rule that scenario FAIL does not become harness crash.
-- [ ] **Step 2: Implement the matrix runner for:**
+- [x] **Step 1: Write failing Node tests** for matrix expansion, frozen repetitions/seeds, argv construction and the rule that scenario FAIL does not become harness crash.
+- [x] **Step 2: Implement the matrix runner for:**
   - `tree-hang + cancel` → R-02/R-03/R-06 physical facts;
   - `tree-hang + timeout` → R-03;
   - `root-exit-detached + cancel` → R-02/R-06 escape attempt;
   - `late-output-hang + cancel` → R-08/RR-02/RR-07 drain/late-write facts.
-- [ ] **Step 3: Save one JSON result per case/repetition plus a capability summary; never hide FAIL/INCONCLUSIVE.**
-- [ ] **Step 4: Run Node tests plus Rust tests/checks.**
-- [ ] **Step 5: Commit** `test(m0): add ProcessKit hostile matrix runner`.
+- [x] **Step 3: Save one JSON result per case/repetition plus a capability summary; never hide FAIL/INCONCLUSIVE.**
+- [x] **Step 4: Run Node tests plus Rust tests/checks.**
+- [x] **Step 5: Commit** `test(m0): add ProcessKit hostile matrix runner`.
 
 ### Task 5: Add three-platform evidence workflow
 
@@ -120,10 +120,10 @@
 - Node 22.16.0, Rust 1.88.0, committed locks, no `continue-on-error`.
 - Workflow first runs contract/unit/smoke checks, then the evidence matrix, then uploads raw redacted JSON/control/marker artifacts even when scenario verdict is FAIL.
 
-- [ ] **Step 1: Write a failing workflow-structure test** for platform pins, toolchain pins, `--locked`, artifact upload and absence of `continue-on-error`.
-- [ ] **Step 2: Add the workflow and run it on the spike branch.**
-- [ ] **Step 3: Inspect all three artifacts and confirm actual mechanisms instead of inferring from OS names.**
-- [ ] **Step 4: Commit** `ci(m0): run ProcessKit hostile containment matrix`.
+- [x] **Step 1: Write a failing workflow-structure test** for platform pins, toolchain pins, `--locked`, artifact upload and absence of `continue-on-error`.
+- [x] **Step 2: Add the workflow and run it on the spike branch.**
+- [x] **Step 3: Inspect all three artifacts and confirm actual mechanisms instead of inferring from OS names.**
+- [x] **Step 4: Commit** `ci(m0): run ProcessKit hostile containment matrix`.
 
 ### Task 6: Record capability evidence without declaring Spike 1 PASS
 
@@ -135,15 +135,44 @@
 - Per platform: actual mechanism; scenario-level PASS/FAIL/INCONCLUSIVE; survivor/late-write/drain/observer facts; limitations.
 - Overall document may say `EVIDENCE_COLLECTED`, `FAIL`, or `INCONCLUSIVE`; it must not say Spike 1 PASS because R-04/R-05/R-07/R-09/R-10/R-11 and the business-state harness remain independently required.
 
-- [ ] **Step 1: Generate the matrix only from uploaded artifacts, preserving every failed repetition.**
-- [ ] **Step 2: Compare findings against R-02/R-03/R-06/R-08 and RR-02/RR-07.**
-- [ ] **Step 3: Record the next action for each platform without flattening Job Object and process-group guarantees.**
-- [ ] **Step 4: Re-run the full branch verification and update Issue #12 / Draft PR.**
-- [ ] **Step 5: Commit** `docs(m0): record ProcessKit hostile containment evidence`.
+- [x] **Step 1: Generate the matrix only from uploaded artifacts, preserving every failed repetition.**
+- [x] **Step 2: Compare findings against R-02/R-03/R-06/R-08 and RR-02/RR-07.**
+- [x] **Step 3: Record the next action for each platform without flattening Job Object and process-group guarantees.**
+- [x] **Step 4: Re-run the full branch verification and update Issue #12 / Draft PR.**
+- [x] **Step 5: Commit** `docs(m0): record ProcessKit hostile containment evidence`.
+
+## Frozen evidence result
+
+Evidence-producing head: `c8d011c5c6fccc71a0a389039ec2048adf6805eb`.
+
+Independent workflows on that head:
+
+- `M0 cross-platform runtime` run `33491181182`: Windows / Ubuntu / macOS = **3/3 success**.
+- `M0 ProcessKit hostile containment` run `33491181220`: Windows / Ubuntu / macOS = **3/3 harness success**.
+
+The hostile workflow executed **600/600 harness runs successfully**. Scenario verdicts were **361 PASS / 239 FAIL / 0 INCONCLUSIVE**.
+
+Observed mechanisms and scenario results:
+
+- Windows Server 2025: `job_object`, 106 PASS / 94 FAIL. The failures are an observer disagreement: Job membership is empty but the independent PID liveness observer reports original descendants as alive. This requires TECH-XP-04 (#14); historical failures remain frozen.
+- Ubuntu 24.04: `process_group`, 110 PASS / 90 FAIL. `root-exit-detached + cancel` is 50/50 FAIL with child/grandchild survivors and late writes. A true `cgroup_v2` profile remains untested and is TECH-XP-05 (#15).
+- macOS 15: `process_group`, 145 PASS / 55 FAIL. `root-exit-detached + cancel` is 50/50 FAIL with child/grandchild survivors and late writes. The macOS capability/mechanism decision is TECH-XP-06 (#16).
+
+Machine-readable evidence: `experiments/milestone-0/processkit-hostile-capability-matrix.json`.
+
+Human-readable evidence: `experiments/milestone-0/processkit-hostile-evidence.md`.
+
+Current experiment result: **FAIL — evidence collected**. This is a valid technical-validation outcome and does not mean the experiment harness failed or ProcessKit is rejected as a whole.
+
+Post-evidence documentation commit `7b20c46beb6dd84d93008736871d4f4e89ec4aa0` triggered fresh verification. Foundation run `33492360956` is 3/3 success. The hostile rerun is verification-only and does not replace the frozen evidence snapshot above.
 
 ## Self-review result
 
-- Spec coverage: this plan covers the physical containment/drain evidence of R-02, R-03, R-06, R-08, RR-02 and RR-07. It intentionally does not duplicate Node business-state/CAS coverage for R-04, R-05, R-09, R-10 or R-11, and it does not simulate Runner-process crash R-07 in the first matrix; those remain explicit remaining Spike 1 work.
+- Spec coverage: this plan covers the physical containment/drain evidence of R-02, R-03, R-06, R-08, RR-02 and RR-07. It intentionally does not duplicate Node business-state/CAS coverage for R-04, R-05, R-09, R-10 or R-11, and it does not simulate Runner-process crash R-07 in this matrix; those remain explicit remaining Spike 1 work.
 - No production architecture is frozen; all new code lives under Milestone 0 experiments.
-- Process-group escape is expected to be observable as a limitation rather than hidden by cleanup.
+- Process-group escape is recorded as a limitation rather than hidden by cleanup.
 - The CI process exit reports harness execution health, while scenario verdicts remain machine-readable evidence and may be FAIL without weakening CI.
+- No real Codex was started.
+- No platform is `managed`.
+- Spike 1 remains **NOT PASS**.
+- Technical Gate remains **NOT EVALUATED**.
