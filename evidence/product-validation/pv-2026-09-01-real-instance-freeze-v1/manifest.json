@@ -14,15 +14,24 @@
   "selection_rule": "Freeze the nine most recent accessible real code-work instances by occurrence time descending, independent of candidate Task-model fit or success/failure outcome. Exclude pure documentation-only records, research-only discussions, learning questions, and future product ideas; do not exclude failed, cancelled, rejected or superseded engineering work merely because it did not merge.",
   "status": {
     "product_validation": "IN_PROGRESS",
-    "nine_real_instances": "FROZEN_NEUTRAL_MAPPING_COMPLETE_FIT_PENDING",
+    "nine_real_instances": "FROZEN_FIRST_PASS_FIT_COMPLETE_TRAJECTORY_GAP_OPEN",
+    "task_aggregation": "DRAFT_CONTINUE_VALIDATION",
     "founder_validation": "STRONG_SIGNAL_SUPPORTING_ONLY",
     "external_participants": "NOT_STARTED"
   },
   "counts": {
     "frozen_domain_instances": 9,
     "mapped_domain_instances": 9,
-    "fit_classified_domain_instances": 0,
+    "fit_classified_domain_instances": 9,
+    "natural_fit": 9,
+    "strained_fit": 0,
+    "model_break": 0,
+    "first_nine_giant_task_cases": 0,
+    "first_nine_special_fk_cases": 0,
+    "first_nine_ambiguous_ownership_cases": 0,
+    "exception_lifecycle_cases": 0,
     "distinct_actual_end_to_end_trajectories": 0,
+    "required_distinct_actual_trajectories": 6,
     "qualified_external_participants": 0,
     "external_real_problems_completed": 0,
     "independent_users_with_qualifying_reuse": 0
@@ -30,12 +39,15 @@
   "public_evidence_scope": [
     "GitHub pull-request metadata and public CI/preview references for XiaoDaoJiang/Orbis",
     "redacted founder-signal index",
-    "protocol and sampling locks"
+    "protocol and sampling locks",
+    "first-pass Task aggregation fit review"
   ],
   "non_implications": [
     "This snapshot is not a Product Validation Gate PASS.",
+    "9/9 natural_fit applies to known facts only; native Agent Run/Session and local Workspace lifecycle remain unproven where raw evidence is absent.",
+    "0/6 distinct actual trajectories means Task Aggregation cannot receive a Final Keep yet.",
     "Founder evidence does not count as an external participant or qualifying reuse.",
-    "Neutral mapping does not establish Task Aggregation fit until fit classification and trajectory coverage are completed.",
+    "Technical Validation fault injection is not automatically Product Validation real-work evidence.",
     "No Product MVP WWA, production Task schema, or product UI is authorized."
   ]
 }
