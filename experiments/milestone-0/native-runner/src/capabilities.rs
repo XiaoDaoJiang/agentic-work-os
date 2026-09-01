@@ -49,9 +49,9 @@ fn map_mechanism(platform: &str, mechanism: &str) -> Result<(&'static str, &'sta
             Ok(("posix_process_group", "process_group"))
         }
         ("freebsd", "process_reaper") => Ok(("process_reaper", "strong")),
-        (_, known @ ("job_object" | "cgroup_v2" | "process_group" | "process_reaper")) => {
-            Err(format!("mechanism {known} is incompatible with platform {platform}"))
-        }
+        (_, known @ ("job_object" | "cgroup_v2" | "process_group" | "process_reaper")) => Err(
+            format!("mechanism {known} is incompatible with platform {platform}"),
+        ),
         (_, other) => Err(format!("unsupported containment mechanism: {other}")),
     }
 }
@@ -203,50 +203,60 @@ mod tests {
 
     #[test]
     fn rejects_unknown_or_impossible_host_reports_without_defaulting() {
-        assert!(build_capabilities(
-            "plan9",
-            "x86_64",
-            "process_group",
-            "whole_tree",
-            "none",
-            "3.3.4",
-        )
-        .is_err());
-        assert!(build_capabilities(
-            "windows",
-            "x86_64",
-            "cgroup_v2",
-            "whole_tree",
-            "whole_tree",
-            "3.3.4",
-        )
-        .is_err());
-        assert!(build_capabilities(
-            "linux",
-            "x86_64",
-            "future_mechanism",
-            "whole_tree",
-            "direct_child_only",
-            "3.3.4",
-        )
-        .is_err());
-        assert!(build_capabilities(
-            "linux",
-            "x86_64",
-            "cgroup_v2",
-            "future_scope",
-            "direct_child_only",
-            "3.3.4",
-        )
-        .is_err());
-        assert!(build_capabilities(
-            "linux",
-            "x86_64",
-            "cgroup_v2",
-            "whole_tree",
-            "future_cleanup",
-            "3.3.4",
-        )
-        .is_err());
+        assert!(
+            build_capabilities(
+                "plan9",
+                "x86_64",
+                "process_group",
+                "whole_tree",
+                "none",
+                "3.3.4",
+            )
+            .is_err()
+        );
+        assert!(
+            build_capabilities(
+                "windows",
+                "x86_64",
+                "cgroup_v2",
+                "whole_tree",
+                "whole_tree",
+                "3.3.4",
+            )
+            .is_err()
+        );
+        assert!(
+            build_capabilities(
+                "linux",
+                "x86_64",
+                "future_mechanism",
+                "whole_tree",
+                "direct_child_only",
+                "3.3.4",
+            )
+            .is_err()
+        );
+        assert!(
+            build_capabilities(
+                "linux",
+                "x86_64",
+                "cgroup_v2",
+                "future_scope",
+                "direct_child_only",
+                "3.3.4",
+            )
+            .is_err()
+        );
+        assert!(
+            build_capabilities(
+                "linux",
+                "x86_64",
+                "cgroup_v2",
+                "whole_tree",
+                "future_cleanup",
+                "3.3.4",
+            )
+            .is_err()
+        );
     }
 }
