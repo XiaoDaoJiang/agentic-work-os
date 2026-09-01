@@ -1,5 +1,5 @@
 use agentic_native_runner::windows_process_truth::{
-    WindowsProcessTruth, WindowsTruthVerdict, Win32OpenState, Win32WaitState,
+    Win32OpenState, Win32WaitState, WindowsProcessTruth, WindowsTruthVerdict,
     classify_windows_process_truth,
 };
 
