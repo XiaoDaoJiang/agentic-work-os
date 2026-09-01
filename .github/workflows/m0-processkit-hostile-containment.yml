@@ -49,6 +49,7 @@ jobs:
           grep -F "$expected" Cargo.toml
 
       - name: Validate committed Rust dependency lock
+        shell: bash
         run: cargo metadata --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --format-version 1 --no-deps > /dev/null
 
       - name: Run hostile Node contract tests
