@@ -50,6 +50,13 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Verify pinned processkit dependency
+        working-directory: experiments/milestone-0/native-runner
+        shell: bash
+        run: |
+          expected="processkit = \"=${PROCESSKIT_VERSION}\""
+          grep -F "$expected" Cargo.toml
+
       - name: Run cross-platform Node contract tests
         working-directory: experiments/milestone-0
         run: >-
