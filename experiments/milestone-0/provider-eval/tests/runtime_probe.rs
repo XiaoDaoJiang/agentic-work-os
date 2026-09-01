@@ -39,12 +39,12 @@ fn assert_common(value: &Value, candidate: &str) {
 }
 
 #[test]
-fn processkit_probe_reports_the_host_mechanism_instead_of_guessing_from_platform() {
+fn processkit_probe_reports_the_created_group_mechanism_instead_of_a_preflight_guess() {
     let value = run_probe("processkit");
     assert_common(&value, "processkit");
     assert_eq!(value["candidate_version"], "3.3.4");
-    assert_eq!(value["probe_level"], "host_preflight");
-    assert_eq!(value["mechanism_source"], "runtime_reported");
+    assert_eq!(value["probe_level"], "group_creation");
+    assert_eq!(value["mechanism_source"], "runtime_created_group");
     assert!(!value["mechanism"].as_str().unwrap().is_empty());
 }
 
