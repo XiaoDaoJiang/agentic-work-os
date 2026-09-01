@@ -1,0 +1,17 @@
+{
+  "hostile_process_v0": {
+    "seed": 7,
+    "stdoutFrames": ["boot", "tree-ready"],
+    "stderrFrames": ["boot", "tree-ready"],
+    "outputIntervalMs": 5,
+    "timingJitterMs": 3,
+    "continuousOutputIntervalMs": 20,
+    "spawnChild": true,
+    "spawnGrandchild": true,
+    "rootExitBeforeDescendants": false,
+    "exitMode": "hang",
+    "markerWrites": 4,
+    "markerIntervalMs": 25,
+    "ignoreSoftStop": true
+  }
+}
