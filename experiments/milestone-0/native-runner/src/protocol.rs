@@ -117,10 +117,14 @@ fn validate_common(protocol: &str, request_id: &str, run_id: &str) -> Result<(),
         return Err(validation(format!("protocol must be {RUNNER_PROTOCOL}")));
     }
     if !is_safe_id(request_id) {
-        return Err(validation("request_id must use letters, digits, dot, underscore, or hyphen"));
+        return Err(validation(
+            "request_id must use letters, digits, dot, underscore, or hyphen",
+        ));
     }
     if !is_safe_id(run_id) {
-        return Err(validation("run_id must use letters, digits, dot, underscore, or hyphen"));
+        return Err(validation(
+            "run_id must use letters, digits, dot, underscore, or hyphen",
+        ));
     }
     Ok(())
 }
@@ -136,11 +140,18 @@ fn validate_nul_free(value: &str, label: &str) -> Result<(), ProtocolError> {
 }
 
 fn validate_environment(environment: &EnvironmentSpec) -> Result<(), ProtocolError> {
-    if !matches!(environment.inheritance_policy.as_str(), "none" | "allowlist") {
-        return Err(validation("env.inheritance_policy must be none or allowlist"));
+    if !matches!(
+        environment.inheritance_policy.as_str(),
+        "none" | "allowlist"
+    ) {
+        return Err(validation(
+            "env.inheritance_policy must be none or allowlist",
+        ));
     }
     if environment.inheritance_policy == "none" && !environment.inherit_names.is_empty() {
-        return Err(validation("env.inherit_names must be empty when inheritance_policy is none"));
+        return Err(validation(
+            "env.inherit_names must be empty when inheritance_policy is none",
+        ));
     }
 
     let mut names = HashSet::new();
@@ -231,7 +242,9 @@ pub fn decode_base64(value: &str) -> Result<Vec<u8>, ProtocolError> {
         let final_chunk = index == bytes.len() / 4 - 1;
         let padding = usize::from(chunk[3] == b'=') + usize::from(chunk[2] == b'=');
         if padding > 0 && !final_chunk {
-            return Err(validation("bytes_base64 padding is only allowed in the final quartet"));
+            return Err(validation(
+                "bytes_base64 padding is only allowed in the final quartet",
+            ));
         }
         if chunk[2] == b'=' && chunk[3] != b'=' {
             return Err(validation("bytes_base64 has invalid padding"));
@@ -240,17 +253,21 @@ pub fn decode_base64(value: &str) -> Result<Vec<u8>, ProtocolError> {
             return Err(validation("bytes_base64 has invalid padding"));
         }
 
-        let a = base64_value(chunk[0]).ok_or_else(|| validation("bytes_base64 contains invalid characters"))?;
-        let b = base64_value(chunk[1]).ok_or_else(|| validation("bytes_base64 contains invalid characters"))?;
+        let a = base64_value(chunk[0])
+            .ok_or_else(|| validation("bytes_base64 contains invalid characters"))?;
+        let b = base64_value(chunk[1])
+            .ok_or_else(|| validation("bytes_base64 contains invalid characters"))?;
         let c = if chunk[2] == b'=' {
             0
         } else {
-            base64_value(chunk[2]).ok_or_else(|| validation("bytes_base64 contains invalid characters"))?
+            base64_value(chunk[2])
+                .ok_or_else(|| validation("bytes_base64 contains invalid characters"))?
         };
         let d = if chunk[3] == b'=' {
             0
         } else {
-            base64_value(chunk[3]).ok_or_else(|| validation("bytes_base64 contains invalid characters"))?
+            base64_value(chunk[3])
+                .ok_or_else(|| validation("bytes_base64 contains invalid characters"))?
         };
 
         output.push((a << 2) | (b >> 4));
@@ -298,7 +315,9 @@ pub fn parse_stage_b_batch(input: &str) -> Result<StageBRun, ProtocolError> {
     for request in iterator {
         if finished {
             return match request {
-                WireRequest::FinishInput(_) => Err(validation("finish_input may occur exactly once")),
+                WireRequest::FinishInput(_) => {
+                    Err(validation("finish_input may occur exactly once"))
+                }
                 _ => Err(validation("request arrived after finish_input")),
             };
         }
@@ -312,7 +331,9 @@ pub fn parse_stage_b_batch(input: &str) -> Result<StageBRun, ProtocolError> {
             WireRequest::Input(request) => {
                 validate_common(&request.protocol, &request.request_id, &request.run_id)?;
                 if request.run_id != start.run_id {
-                    return Err(validation("every request run_id must match the start request"));
+                    return Err(validation(
+                        "every request run_id must match the start request",
+                    ));
                 }
                 if !seen_request_ids.insert(request.request_id.clone()) {
                     return Err(validation("request_id must be unique"));
@@ -332,7 +353,9 @@ pub fn parse_stage_b_batch(input: &str) -> Result<StageBRun, ProtocolError> {
             WireRequest::FinishInput(request) => {
                 validate_common(&request.protocol, &request.request_id, &request.run_id)?;
                 if request.run_id != start.run_id {
-                    return Err(validation("every request run_id must match the start request"));
+                    return Err(validation(
+                        "every request run_id must match the start request",
+                    ));
                 }
                 if !seen_request_ids.insert(request.request_id) {
                     return Err(validation("request_id must be unique"));
