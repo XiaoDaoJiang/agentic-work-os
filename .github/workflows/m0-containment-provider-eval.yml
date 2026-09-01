@@ -1,0 +1,36 @@
+name: M0 containment provider eval
+
+on:
+  push:
+    branches:
+      - spike/containment-provider-eval
+    paths:
+      - .github/workflows/m0-containment-provider-eval.yml
+      - experiments/milestone-0/provider-eval/**
+  pull_request:
+    paths:
+      - .github/workflows/m0-containment-provider-eval.yml
+      - experiments/milestone-0/provider-eval/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-red-green:
+    name: Provider Eval Contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Run provider evaluation contract tests
+        run: cargo test --manifest-path experiments/milestone-0/provider-eval/Cargo.toml

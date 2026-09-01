@@ -1,0 +1,11 @@
+[package]
+name = "containment-provider-eval"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+description = "Throwaway Milestone 0 spike for comparing Rust containment providers"
+
+[dev-dependencies]
+serde_json = "1"
