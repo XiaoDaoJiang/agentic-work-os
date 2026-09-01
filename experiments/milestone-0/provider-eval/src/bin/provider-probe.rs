@@ -21,15 +21,19 @@ struct ProbeReport {
 
 fn processkit_report() -> Result<ProbeReport, String> {
     let host = processkit::host_containment();
+    let group = processkit::ProcessGroup::new().map_err(|error| error.to_string())?;
+    let mechanism = group.mechanism().name().to_owned();
+    drop(group);
+
     Ok(ProbeReport {
         schema: "containment-provider-probe-v0",
         candidate: "processkit",
         candidate_version: host.crate_version().to_owned(),
         platform: std::env::consts::OS,
         architecture: std::env::consts::ARCH,
-        probe_level: "host_preflight",
-        mechanism_source: "runtime_reported",
-        mechanism: host.mechanism().name().to_owned(),
+        probe_level: "group_creation",
+        mechanism_source: "runtime_created_group",
+        mechanism,
         spawn_attempted: false,
         spawn_ok: false,
         membership_observable: true,
