@@ -6,16 +6,16 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use processkit::{ProcessGroup, process_info, process_is_alive};
+use processkit::{process_info, process_is_alive, ProcessGroup};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Child;
 use tokio::task::JoinHandle;
 use tokio::time;
 
 use crate::hostile_evidence::{
-    HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
+    evaluate_physical_verdict, record_cleanup_outcome, HostileEvidence, HostileVerdict,
 };
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
@@ -194,10 +194,22 @@ struct PidAnchor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IdentityState {
+    Anchored(PidAnchor),
+    Gone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileFingerprint {
     exists: bool,
     size: u64,
     fnv1a64: u64,
+}
+
+#[derive(Debug)]
+struct ControlSnapshot {
+    pids: BTreeSet<u32>,
+    complete: bool,
 }
 
 struct ObservationOutcome {
@@ -245,8 +257,8 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         .spawn(command)
         .map_err(|error| format!("spawn hostile fixture: {error}"))?;
     let root_pid = child.id();
-    let root_pid_value = root_pid
-        .ok_or_else(|| "spawned hostile fixture did not expose a root pid".to_owned())?;
+    let root_pid_value =
+        root_pid.ok_or_else(|| "spawned hostile fixture did not expose a root pid".to_owned())?;
     let stdout = child
         .stdout
         .take()
@@ -261,26 +273,20 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     let mut observation_errors = Vec::new();
     let mut teardown_errors = Vec::new();
     let mut fixture_pids = BTreeSet::from([root_pid_value]);
-    let mut pid_anchors = BTreeMap::new();
-    let mut observer_complete = capture_new_pid_anchor(
-        root_pid_value,
-        &mut pid_anchors,
-        &mut observation_errors,
-    );
-    let mut control_parse_complete = true;
+    let mut identities = BTreeMap::new();
+    try_resolve_identity(root_pid_value, false, &mut identities);
     let members_before;
 
     match config.trigger {
         Trigger::Cancel | Trigger::Timeout => {
-            time::sleep(Duration::from_millis(config.trigger_ms)).await;
-            let refresh = refresh_control_catalog(
+            discover_until_deadline(
                 &control_file,
                 &mut fixture_pids,
-                &mut pid_anchors,
-                &mut observation_errors,
-            );
-            control_parse_complete &= refresh.control_parse_complete;
-            observer_complete &= refresh.observer_complete;
+                &mut identities,
+                Duration::from_millis(config.trigger_ms),
+                Duration::from_millis(config.sample_ms),
+            )
+            .await;
             members_before = read_members(&group, "members_before", &mut observation_errors);
             if let Err(error) = group.kill_all() {
                 teardown_errors.push(format!("kill_all: {error}"));
@@ -289,36 +295,24 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         }
         Trigger::Natural => {
             members_before = read_members(&group, "members_before", &mut observation_errors);
-            match time::timeout(Duration::from_millis(config.trigger_ms), child.wait()).await {
-                Ok(Ok(_status)) => {
-                    let refresh = refresh_control_catalog(
-                        &control_file,
-                        &mut fixture_pids,
-                        &mut pid_anchors,
-                        &mut observation_errors,
-                    );
-                    control_parse_complete &= refresh.control_parse_complete;
-                    observer_complete &= refresh.observer_complete;
+            let exited = wait_for_natural_exit(
+                &mut child,
+                &control_file,
+                &mut fixture_pids,
+                &mut identities,
+                Duration::from_millis(config.trigger_ms),
+                Duration::from_millis(config.sample_ms),
+            )
+            .await;
+            if !exited {
+                teardown_errors.push(format!(
+                    "natural harness deadline elapsed after {} ms",
+                    config.trigger_ms
+                ));
+                if let Err(error) = group.kill_all() {
+                    teardown_errors.push(format!("natural cleanup kill_all: {error}"));
                 }
-                Ok(Err(error)) => teardown_errors.push(format!("root wait: {error}")),
-                Err(_) => {
-                    let refresh = refresh_control_catalog(
-                        &control_file,
-                        &mut fixture_pids,
-                        &mut pid_anchors,
-                        &mut observation_errors,
-                    );
-                    control_parse_complete &= refresh.control_parse_complete;
-                    observer_complete &= refresh.observer_complete;
-                    teardown_errors.push(format!(
-                        "natural harness deadline elapsed after {} ms",
-                        config.trigger_ms
-                    ));
-                    if let Err(error) = group.kill_all() {
-                        teardown_errors.push(format!("natural cleanup kill_all: {error}"));
-                    }
-                    reap_root(&mut child, &group, &mut teardown_errors).await;
-                }
+                reap_root(&mut child, &group, &mut teardown_errors).await;
             }
         }
     }
@@ -335,18 +329,10 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         observation_errors.push(error);
     }
 
-    let refresh = refresh_control_catalog(
-        &control_file,
-        &mut fixture_pids,
-        &mut pid_anchors,
-        &mut observation_errors,
-    );
-    control_parse_complete &= refresh.control_parse_complete;
-    observer_complete &= refresh.observer_complete;
-
+    best_effort_discover_control(&control_file, &mut fixture_pids, &mut identities, true);
     let baseline_control = fingerprint_file(&control_file, &mut observation_errors);
     let baseline_marker = fingerprint_file(&marker_file, &mut observation_errors);
-    observer_complete &= baseline_control.is_some() && baseline_marker.is_some();
+    let fingerprint_ready = baseline_control.is_some() && baseline_marker.is_some();
 
     let observation = observe_window(
         &group,
@@ -355,15 +341,14 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         baseline_control,
         baseline_marker,
         &mut fixture_pids,
-        &mut pid_anchors,
+        &mut identities,
         Duration::from_millis(config.post_stop_ms),
         Duration::from_millis(config.sample_ms),
         &mut observation_errors,
     )
     .await;
-    observer_complete &= observation.observer_complete;
-    control_parse_complete &= observation.control_parse_complete;
-    observer_complete &= control_parse_complete;
+    let observer_complete = fingerprint_ready && observation.observer_complete;
+    let control_parse_complete = observation.control_parse_complete;
 
     let teardown_error = if teardown_errors.is_empty() {
         None
@@ -397,9 +382,10 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
 
     let physical_verdict = evaluate_physical_verdict(&evidence);
     let physical_verdict_name = verdict_name(physical_verdict);
+    let anchors = anchored_identities(&identities);
     let (cleanup_succeeded, cleanup_errors) = cleanup_survivors(
         &observation.survivor_pids,
-        &pid_anchors,
+        &anchors,
         Duration::from_secs(3),
         Duration::from_millis(config.sample_ms),
     )
@@ -578,60 +564,175 @@ async fn reap_root(child: &mut Child, group: &ProcessGroup, errors: &mut Vec<Str
     }
 }
 
-struct CatalogRefresh {
-    observer_complete: bool,
-    control_parse_complete: bool,
-}
-
-fn refresh_control_catalog(
+async fn discover_until_deadline(
     control_file: &Path,
     fixture_pids: &mut BTreeSet<u32>,
-    anchors: &mut BTreeMap<u32, PidAnchor>,
-    errors: &mut Vec<String>,
-) -> CatalogRefresh {
-    let (pids, control_parse_complete) = parse_fixture_pids(control_file);
-    let mut observer_complete = true;
-    for pid in pids {
-        if fixture_pids.insert(pid) {
-            observer_complete &= capture_new_pid_anchor(pid, anchors, errors);
+    identities: &mut BTreeMap<u32, IdentityState>,
+    duration: Duration,
+    sample: Duration,
+) {
+    let deadline = Instant::now() + duration;
+    loop {
+        best_effort_discover_control(control_file, fixture_pids, identities, false);
+        if Instant::now() >= deadline {
+            return;
         }
-    }
-    if !control_parse_complete {
-        errors.push("control JSONL was missing or not completely parseable".to_owned());
-    }
-    CatalogRefresh {
-        observer_complete,
-        control_parse_complete,
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        time::sleep(std::cmp::min(sample, remaining)).await;
     }
 }
 
-fn capture_new_pid_anchor(
-    pid: u32,
-    anchors: &mut BTreeMap<u32, PidAnchor>,
+async fn wait_for_natural_exit(
+    child: &mut Child,
+    control_file: &Path,
+    fixture_pids: &mut BTreeSet<u32>,
+    identities: &mut BTreeMap<u32, IdentityState>,
+    duration: Duration,
+    sample: Duration,
+) -> bool {
+    let deadline = Instant::now() + duration;
+    loop {
+        best_effort_discover_control(control_file, fixture_pids, identities, false);
+        match child.try_wait() {
+            Ok(Some(_status)) => return true,
+            Ok(None) => {}
+            Err(_) => return false,
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        time::sleep(std::cmp::min(sample, remaining)).await;
+    }
+}
+
+fn best_effort_discover_control(
+    control_file: &Path,
+    fixture_pids: &mut BTreeSet<u32>,
+    identities: &mut BTreeMap<u32, IdentityState>,
+    allow_gone: bool,
+) {
+    let Ok(snapshot) = read_control_snapshot(control_file, false) else {
+        return;
+    };
+    for pid in snapshot.pids {
+        fixture_pids.insert(pid);
+        try_resolve_identity(pid, allow_gone, identities);
+    }
+}
+
+fn strict_finalize_control(
+    control_file: &Path,
+    fixture_pids: &mut BTreeSet<u32>,
+    identities: &mut BTreeMap<u32, IdentityState>,
     errors: &mut Vec<String>,
 ) -> bool {
-    if anchors.contains_key(&pid) {
-        return true;
-    }
-    match process_info(pid) {
-        Ok(Some(info)) => match info.start_time() {
-            Some(start_time) => {
-                anchors.insert(pid, PidAnchor { pid, start_time });
-                true
-            }
-            None => {
-                errors.push(format!(
-                    "process_info({pid}) did not provide a reuse-safe start time"
-                ));
-                false
-            }
-        },
-        Ok(None) => true,
+    let snapshot = match read_control_snapshot(control_file, true) {
+        Ok(snapshot) => snapshot,
         Err(error) => {
-            errors.push(format!("process_info({pid}): {error}"));
-            false
+            errors.push(error);
+            return false;
+        }
+    };
+    for pid in snapshot.pids {
+        fixture_pids.insert(pid);
+        if !identities.contains_key(&pid) {
+            match resolve_identity(pid, true) {
+                Ok(Some(state)) => {
+                    identities.insert(pid, state);
+                }
+                Ok(None) => {}
+                Err(error) => errors.push(error),
+            }
         }
     }
+    if !snapshot.complete {
+        errors.push("final control JSONL is missing, truncated, malformed, or lacks pid".to_owned());
+    }
+    snapshot.complete && fixture_pids.iter().all(|pid| identities.contains_key(pid))
+}
+
+fn read_control_snapshot(path: &Path, strict: bool) -> Result<ControlSnapshot, String> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound && !strict => {
+            return Ok(ControlSnapshot {
+                pids: BTreeSet::new(),
+                complete: false,
+            });
+        }
+        Err(error) => return Err(format!("read control JSONL {}: {error}", path.display())),
+    };
+
+    let has_partial_tail = !content.is_empty() && !content.ends_with('\n');
+    let parse_end = if has_partial_tail {
+        content.rfind('\n').map_or(0, |index| index + 1)
+    } else {
+        content.len()
+    };
+    let mut pids = BTreeSet::new();
+    let mut complete = !has_partial_tail;
+
+    for line in content[..parse_end]
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let value = match serde_json::from_str::<Value>(line) {
+            Ok(value) => value,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        };
+        match value.get("pid").and_then(Value::as_u64) {
+            Some(pid) if u32::try_from(pid).is_ok() => {
+                pids.insert(pid as u32);
+            }
+            _ => complete = false,
+        }
+    }
+
+    Ok(ControlSnapshot { pids, complete })
+}
+
+fn try_resolve_identity(
+    pid: u32,
+    allow_gone: bool,
+    identities: &mut BTreeMap<u32, IdentityState>,
+) {
+    if identities.contains_key(&pid) {
+        return;
+    }
+    if let Ok(Some(state)) = resolve_identity(pid, allow_gone) {
+        identities.insert(pid, state);
+    }
+}
+
+fn resolve_identity(pid: u32, allow_gone: bool) -> Result<Option<IdentityState>, String> {
+    match process_info(pid) {
+        Ok(Some(info)) => match info.start_time() {
+            Some(start_time) => Ok(Some(IdentityState::Anchored(PidAnchor {
+                pid,
+                start_time,
+            }))),
+            None => Err(format!(
+                "process_info({pid}) did not provide a reuse-safe start time"
+            )),
+        },
+        Ok(None) if allow_gone => Ok(Some(IdentityState::Gone)),
+        Ok(None) => Ok(None),
+        Err(error) => Err(format!("process_info({pid}): {error}")),
+    }
+}
+
+fn anchored_identities(identities: &BTreeMap<u32, IdentityState>) -> BTreeMap<u32, PidAnchor> {
+    identities
+        .iter()
+        .filter_map(|(pid, state)| match state {
+            IdentityState::Anchored(anchor) => Some((*pid, *anchor)),
+            IdentityState::Gone => None,
+        })
+        .collect()
 }
 
 fn fingerprint_file(path: &Path, errors: &mut Vec<String>) -> Option<FileFingerprint> {
@@ -670,75 +771,75 @@ async fn observe_window(
     baseline_control: Option<FileFingerprint>,
     baseline_marker: Option<FileFingerprint>,
     fixture_pids: &mut BTreeSet<u32>,
-    anchors: &mut BTreeMap<u32, PidAnchor>,
+    identities: &mut BTreeMap<u32, IdentityState>,
     duration: Duration,
     sample: Duration,
     errors: &mut Vec<String>,
 ) -> ObservationOutcome {
     let deadline = Instant::now() + duration;
-    let mut members_after = read_members(group, "post-stop members", errors);
+    let mut observed_members = BTreeSet::new();
     let mut survivor_pids = BTreeSet::new();
     let mut observed_late_write = false;
-    let mut observer_complete = true;
-    let mut control_parse_complete = true;
+    let mut liveness_complete = true;
+    let mut fingerprint_complete = true;
 
-    sample_pid_liveness(anchors, &mut survivor_pids, errors, &mut observer_complete);
-    compare_file_fingerprint(
-        control_file,
-        baseline_control,
-        errors,
-        &mut observer_complete,
-        &mut observed_late_write,
-    );
-    compare_file_fingerprint(
-        marker_file,
-        baseline_marker,
-        errors,
-        &mut observer_complete,
-        &mut observed_late_write,
-    );
-
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        time::sleep(std::cmp::min(sample, remaining)).await;
-
-        let refresh = refresh_control_catalog(control_file, fixture_pids, anchors, errors);
-        observer_complete &= refresh.observer_complete;
-        control_parse_complete &= refresh.control_parse_complete;
-        members_after = read_members(group, "post-stop members", errors);
-        sample_pid_liveness(anchors, &mut survivor_pids, errors, &mut observer_complete);
+    loop {
+        best_effort_discover_control(control_file, fixture_pids, identities, true);
+        observed_members.extend(read_members(group, "post-stop members", errors));
+        sample_pid_liveness(identities, &mut survivor_pids, errors, &mut liveness_complete);
         compare_file_fingerprint(
             control_file,
             baseline_control,
             errors,
-            &mut observer_complete,
+            &mut fingerprint_complete,
             &mut observed_late_write,
         );
         compare_file_fingerprint(
             marker_file,
             baseline_marker,
             errors,
-            &mut observer_complete,
+            &mut fingerprint_complete,
             &mut observed_late_write,
         );
+
+        if Instant::now() >= deadline {
+            break;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        time::sleep(std::cmp::min(sample, remaining)).await;
     }
 
+    let control_parse_complete = strict_finalize_control(
+        control_file,
+        fixture_pids,
+        identities,
+        errors,
+    );
+    sample_pid_liveness(identities, &mut survivor_pids, errors, &mut liveness_complete);
+    let identity_complete = fixture_pids.iter().all(|pid| identities.contains_key(pid));
+
     ObservationOutcome {
-        members_after,
+        members_after: observed_members.into_iter().collect(),
         survivor_pids: survivor_pids.into_iter().collect(),
         observed_late_write,
-        observer_complete,
+        observer_complete: control_parse_complete
+            && identity_complete
+            && liveness_complete
+            && fingerprint_complete,
         control_parse_complete,
     }
 }
 
 fn sample_pid_liveness(
-    anchors: &BTreeMap<u32, PidAnchor>,
+    identities: &BTreeMap<u32, IdentityState>,
     survivors: &mut BTreeSet<u32>,
     errors: &mut Vec<String>,
-    observer_complete: &mut bool,
+    complete: &mut bool,
 ) {
-    for anchor in anchors.values() {
+    for state in identities.values() {
+        let IdentityState::Anchored(anchor) = state else {
+            continue;
+        };
         match process_is_alive(anchor.pid, Some(anchor.start_time)) {
             Ok(true) => {
                 survivors.insert(anchor.pid);
@@ -749,7 +850,7 @@ fn sample_pid_liveness(
                     "process_is_alive({}, {}): {error}",
                     anchor.pid, anchor.start_time
                 ));
-                *observer_complete = false;
+                *complete = false;
             }
         }
     }
@@ -759,7 +860,7 @@ fn compare_file_fingerprint(
     path: &Path,
     baseline: Option<FileFingerprint>,
     errors: &mut Vec<String>,
-    observer_complete: &mut bool,
+    complete: &mut bool,
     observed_late_write: &mut bool,
 ) {
     let current = fingerprint_file(path, errors);
@@ -769,7 +870,7 @@ fn compare_file_fingerprint(
                 *observed_late_write = true;
             }
         }
-        _ => *observer_complete = false,
+        _ => *complete = false,
     }
 }
 
@@ -787,10 +888,7 @@ async fn cleanup_survivors(
     let cleanup_group = match ProcessGroup::new() {
         Ok(group) => group,
         Err(error) => {
-            return (
-                false,
-                vec![format!("create cleanup ProcessGroup: {error}")],
-            );
+            return (false, vec![format!("create cleanup ProcessGroup: {error}")]);
         }
     };
     let mut adopted_any = false;
@@ -813,8 +911,10 @@ async fn cleanup_survivors(
         }
     }
 
-    if adopted_any && let Err(error) = cleanup_group.kill_all() {
-        errors.push(format!("cleanup kill_all: {error}"));
+    if adopted_any {
+        if let Err(error) = cleanup_group.kill_all() {
+            errors.push(format!("cleanup kill_all: {error}"));
+        }
     }
 
     let deadline = Instant::now() + timeout;
@@ -851,23 +951,46 @@ async fn cleanup_survivors(
     }
 }
 
-fn parse_fixture_pids(control_file: &Path) -> (Vec<u32>, bool) {
-    let content = match fs::read_to_string(control_file) {
-        Ok(content) => content,
-        Err(_) => return (Vec::new(), false),
-    };
-    let mut pids = BTreeSet::new();
-    let mut complete = true;
-    for line in content.lines().filter(|line| !line.trim().is_empty()) {
-        match serde_json::from_str::<Value>(line) {
-            Ok(value) => match value.get("pid").and_then(Value::as_u64) {
-                Some(pid) if u32::try_from(pid).is_ok() => {
-                    pids.insert(pid as u32);
-                }
-                _ => complete = false,
-            },
-            Err(_) => complete = false,
-        }
+#[cfg(test)]
+mod tests {
+    use super::{read_control_snapshot, ControlSnapshot};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_file(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("agentic-{name}-{}-{nonce}.jsonl", std::process::id()))
     }
-    (pids.into_iter().collect(), complete)
+
+    #[test]
+    fn discovery_ignores_only_a_partial_trailing_record_but_strict_final_rejects_it() {
+        let path = temp_file("control-partial-tail");
+        fs::write(&path, b"{\"pid\":11}\n{\"pid\":12").expect("write fixture");
+
+        let ControlSnapshot { pids, complete } =
+            read_control_snapshot(&path, false).expect("discovery snapshot");
+        assert_eq!(pids.into_iter().collect::<Vec<_>>(), vec![11]);
+        assert!(!complete);
+
+        let strict = read_control_snapshot(&path, true).expect("strict snapshot");
+        assert_eq!(strict.pids.into_iter().collect::<Vec<_>>(), vec![11]);
+        assert!(!strict.complete);
+
+        fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn strict_final_accepts_only_complete_pid_bearing_jsonl() {
+        let path = temp_file("control-complete");
+        fs::write(&path, b"{\"pid\":11}\n{\"pid\":12}\n").expect("write fixture");
+
+        let strict = read_control_snapshot(&path, true).expect("strict snapshot");
+        assert_eq!(strict.pids.into_iter().collect::<Vec<_>>(), vec![11, 12]);
+        assert!(strict.complete);
+
+        fs::remove_file(path).expect("remove fixture");
+    }
 }
