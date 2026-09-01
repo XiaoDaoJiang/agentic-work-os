@@ -4,15 +4,45 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { sha256File } from './hash.mjs';
 import { toManifestRelativePath } from './paths.mjs';
 
-export function createManifest({ experimentRunId, planSha256, harnessRevision, planPath = null, createdAt = new Date() }) {
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function normalizeAmendments(amendments = []) {
+  if (!Array.isArray(amendments)) throw new Error('amendments must be an array');
+  const seen = new Set();
+  const normalized = amendments.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('amendment must be an object');
+    }
+    if (typeof item.path !== 'string' || item.path.length === 0) {
+      throw new Error('amendment path must be a non-empty string');
+    }
+    if (!SHA256_HEX.test(item.sha256)) {
+      throw new Error('amendment sha256 must be a lowercase SHA-256 hex digest');
+    }
+    if (seen.has(item.path)) throw new Error(`duplicate amendment path: ${item.path}`);
+    seen.add(item.path);
+    return { path: item.path, sha256: item.sha256 };
+  });
+  return normalized.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export function createManifest({
+  experimentRunId,
+  planSha256,
+  amendments = [],
+  harnessRevision,
+  planPath = null,
+  createdAt = new Date()
+}) {
   if (!experimentRunId) throw new Error('experimentRunId is required');
-  if (!/^[0-9a-f]{64}$/.test(planSha256)) throw new Error('planSha256 must be a lowercase SHA-256 hex digest');
+  if (!SHA256_HEX.test(planSha256)) throw new Error('planSha256 must be a lowercase SHA-256 hex digest');
   if (!harnessRevision) throw new Error('harnessRevision is required');
   return {
     manifest_version: 'm0-evidence-manifest-v0',
     experiment_run_id: experimentRunId,
     plan_path: planPath,
     plan_sha256: planSha256,
+    scope_amendments: normalizeAmendments(amendments),
     harness_revision: harnessRevision,
     created_at: createdAt.toISOString(),
     environment: {

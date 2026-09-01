@@ -22,35 +22,44 @@ function parseOptions(args) {
     if (!args[i]?.startsWith('--') || args[i + 1] === undefined) {
       throw new Error(`Expected --name value near ${args[i] ?? '<end>'}`);
     }
-    options[args[i].slice(2)] = args[i + 1];
+    const key = args[i].slice(2);
+    if (key in options) throw new Error(`Duplicate option: --${key}`);
+    options[key] = args[i + 1];
   }
   return options;
 }
 
 async function init(args) {
   const options = parseOptions(args);
-  for (const required of ['evidence-root', 'plan', 'harness-revision']) {
+  for (const required of ['evidence-root', 'plan', 'amendment', 'harness-revision']) {
     if (!options[required]) throw new Error(`--${required} is required`);
   }
   const planPath = path.resolve(options.plan);
+  const amendmentPath = path.resolve(options.amendment);
   const evidenceRoot = path.resolve(options['evidence-root']);
   const experimentRunId = createExperimentRunId();
   const runRoot = path.join(evidenceRoot, experimentRunId);
   const directories = [
-    'spike-1-runner',
+    'spike-1-runner/contract',
+    'spike-1-runner/platforms/windows',
+    'spike-1-runner/platforms/linux',
+    'spike-1-runner/platforms/macos',
     'spike-2-codex-adapter',
     'spike-3-change-package',
     'spike-4-artifact-durability',
-    'cross-contracts/repository-identity',
+    'cross-contracts/repository-identity/marker',
+    'cross-contracts/repository-identity/reference-windows-file-id',
     'cross-contracts/trusted-local',
     'cross-contracts/verification-invocation',
-    'cross-contracts/resource-reconciliation'
+    'cross-contracts/resource-reconciliation',
+    'cross-contracts/runtime-capabilities'
   ];
   await Promise.all(directories.map((dir) => mkdir(path.join(runRoot, dir), { recursive: true })));
   const manifestPath = path.join(runRoot, 'manifest.json');
   const manifest = createManifest({
     experimentRunId,
     planSha256: await sha256File(planPath),
+    amendments: [{ path: amendmentPath, sha256: await sha256File(amendmentPath) }],
     harnessRevision: options['harness-revision'],
     planPath
   });
@@ -96,7 +105,9 @@ async function hostileFixturePlan(args) {
     if (!options[required]) throw new Error(`--${required} is required`);
   }
   const seed = Number(options.seed);
-  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('--seed must be an integer between 0 and 4294967295');
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    throw new Error('--seed must be an integer between 0 and 4294967295');
+  }
   const document = JSON.parse(await readFile(path.resolve(options.scenario), 'utf8'));
   document.hostile_process_v0 = { ...(document.hostile_process_v0 ?? {}), seed };
   const scenario = validateHostileScenario(document);
