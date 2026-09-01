@@ -37,17 +37,20 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Validate committed dependency lock
+        run: cargo metadata --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --format-version 1 --no-deps
+
       - name: Run provider evaluation tests
-        run: cargo test --manifest-path experiments/milestone-0/provider-eval/Cargo.toml
+        run: cargo test --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml
 
       - name: Check formatting
         run: cargo fmt --manifest-path experiments/milestone-0/provider-eval/Cargo.toml -- --check
 
       - name: Run Clippy
-        run: cargo clippy --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --all-targets -- -D warnings
 
       - name: Build release probe
-        run: cargo build --release --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --bin provider-probe
+        run: cargo build --locked --release --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --bin provider-probe
 
       - name: Capture runtime provider evidence
         shell: bash
@@ -78,7 +81,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload resolved Cargo lock
+      - name: Upload committed Cargo lock
         uses: actions/upload-artifact@v7
         with:
           name: containment-provider-lock-${{ matrix.os }}
