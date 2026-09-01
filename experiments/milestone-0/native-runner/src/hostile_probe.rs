@@ -6,16 +6,16 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use processkit::{process_info, process_is_alive, ProcessGroup};
+use processkit::{ProcessGroup, process_info, process_is_alive};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Child;
 use tokio::task::JoinHandle;
 use tokio::time;
 
 use crate::hostile_evidence::{
-    evaluate_physical_verdict, record_cleanup_outcome, HostileEvidence, HostileVerdict,
+    HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
@@ -647,7 +647,8 @@ fn strict_finalize_control(
         }
     }
     if !snapshot.complete {
-        errors.push("final control JSONL is missing, truncated, malformed, or lacks pid".to_owned());
+        errors
+            .push("final control JSONL is missing, truncated, malformed, or lacks pid".to_owned());
     }
     snapshot.complete && fixture_pids.iter().all(|pid| identities.contains_key(pid))
 }
@@ -695,11 +696,7 @@ fn read_control_snapshot(path: &Path, strict: bool) -> Result<ControlSnapshot, S
     Ok(ControlSnapshot { pids, complete })
 }
 
-fn try_resolve_identity(
-    pid: u32,
-    allow_gone: bool,
-    identities: &mut BTreeMap<u32, IdentityState>,
-) {
+fn try_resolve_identity(pid: u32, allow_gone: bool, identities: &mut BTreeMap<u32, IdentityState>) {
     if identities.contains_key(&pid) {
         return;
     }
@@ -711,10 +708,7 @@ fn try_resolve_identity(
 fn resolve_identity(pid: u32, allow_gone: bool) -> Result<Option<IdentityState>, String> {
     match process_info(pid) {
         Ok(Some(info)) => match info.start_time() {
-            Some(start_time) => Ok(Some(IdentityState::Anchored(PidAnchor {
-                pid,
-                start_time,
-            }))),
+            Some(start_time) => Ok(Some(IdentityState::Anchored(PidAnchor { pid, start_time }))),
             None => Err(format!(
                 "process_info({pid}) did not provide a reuse-safe start time"
             )),
@@ -786,7 +780,12 @@ async fn observe_window(
     loop {
         best_effort_discover_control(control_file, fixture_pids, identities, true);
         observed_members.extend(read_members(group, "post-stop members", errors));
-        sample_pid_liveness(identities, &mut survivor_pids, errors, &mut liveness_complete);
+        sample_pid_liveness(
+            identities,
+            &mut survivor_pids,
+            errors,
+            &mut liveness_complete,
+        );
         compare_file_fingerprint(
             control_file,
             baseline_control,
@@ -809,13 +808,14 @@ async fn observe_window(
         time::sleep(std::cmp::min(sample, remaining)).await;
     }
 
-    let control_parse_complete = strict_finalize_control(
-        control_file,
-        fixture_pids,
+    let control_parse_complete =
+        strict_finalize_control(control_file, fixture_pids, identities, errors);
+    sample_pid_liveness(
         identities,
+        &mut survivor_pids,
         errors,
+        &mut liveness_complete,
     );
-    sample_pid_liveness(identities, &mut survivor_pids, errors, &mut liveness_complete);
     let identity_complete = fixture_pids.iter().all(|pid| identities.contains_key(pid));
 
     ObservationOutcome {
@@ -953,7 +953,7 @@ async fn cleanup_survivors(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_control_snapshot, ControlSnapshot};
+    use super::{ControlSnapshot, read_control_snapshot};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -962,7 +962,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("agentic-{name}-{}-{nonce}.jsonl", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "agentic-{name}-{}-{nonce}.jsonl",
+            std::process::id()
+        ))
     }
 
     #[test]
