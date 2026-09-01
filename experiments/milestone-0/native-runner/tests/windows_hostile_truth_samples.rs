@@ -90,11 +90,17 @@ fn hostile_probe_reports_parallel_win32_truth_without_rewriting_physical_verdict
     let summary: Value = serde_json::from_str(line).expect("summary must be JSON");
 
     assert!(
-        summary.get("physical_verdict").and_then(Value::as_str).is_some(),
+        summary
+            .get("physical_verdict")
+            .and_then(Value::as_str)
+            .is_some(),
         "historical physical verdict must remain present"
     );
     assert!(
-        summary.get("survivor_pids").and_then(Value::as_array).is_some(),
+        summary
+            .get("survivor_pids")
+            .and_then(Value::as_array)
+            .is_some(),
         "historical ProcessKit survivor facts must remain present"
     );
 
@@ -102,15 +108,33 @@ fn hostile_probe_reports_parallel_win32_truth_without_rewriting_physical_verdict
         .get("windows_truth_samples")
         .and_then(Value::as_array)
         .expect("Windows diagnostic samples must be emitted in parallel");
-    assert!(!samples.is_empty(), "at least one anchored PID must be diagnosed");
+    assert!(
+        !samples.is_empty(),
+        "at least one anchored PID must be diagnosed"
+    );
 
     for sample in samples {
         assert!(sample.get("pid").and_then(Value::as_u64).is_some());
-        assert!(sample.get("expected_creation_time").and_then(Value::as_u64).is_some());
-        assert!(sample.get("processkit_alive").and_then(Value::as_bool).is_some());
+        assert!(
+            sample
+                .get("expected_creation_time")
+                .and_then(Value::as_u64)
+                .is_some()
+        );
+        assert!(
+            sample
+                .get("processkit_alive")
+                .and_then(Value::as_bool)
+                .is_some()
+        );
         assert!(sample.get("job_member").and_then(Value::as_bool).is_some());
         assert!(sample.get("win32_truth").is_some());
-        assert!(sample.get("truth_verdict").and_then(Value::as_str).is_some());
+        assert!(
+            sample
+                .get("truth_verdict")
+                .and_then(Value::as_str)
+                .is_some()
+        );
     }
 
     fs::remove_dir_all(&root).expect("remove disposable root");
