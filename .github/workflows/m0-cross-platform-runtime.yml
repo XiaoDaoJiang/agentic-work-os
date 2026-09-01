@@ -1,0 +1,133 @@
+name: M0 cross-platform runtime
+
+on:
+  push:
+    branches:
+      - spike/milestone-0-harness
+    paths:
+      - .github/workflows/m0-cross-platform-runtime.yml
+      - docs/pm/55-cross-platform-runtime-decision.md
+      - docs/superpowers/specs/2026-09-01-cross-platform-runtime-design.md
+      - experiments/milestone-0/**
+  pull_request:
+    paths:
+      - .github/workflows/m0-cross-platform-runtime.yml
+      - docs/pm/55-cross-platform-runtime-decision.md
+      - docs/superpowers/specs/2026-09-01-cross-platform-runtime-design.md
+      - experiments/milestone-0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  foundation:
+    name: Foundation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22.16.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.16.0
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Run cross-platform Node contract tests
+        working-directory: experiments/milestone-0
+        run: >-
+          node --test
+          test/manifest.test.mjs
+          test/cli.test.mjs
+          test/repository-marker.test.mjs
+          test/repository-marker-cli.test.mjs
+          test/runner-contract.test.mjs
+
+      - name: Check Node module syntax
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readdirSync } = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          for (const directory of ['src', 'fixtures']) {
+            for (const file of readdirSync(directory).filter((name) => name.endsWith('.mjs')).sort()) {
+              const result = spawnSync(process.execPath, ['--check', `${directory}/${file}`], { stdio: 'inherit' });
+              if (result.status !== 0) process.exit(result.status ?? 1);
+            }
+          }
+          NODE
+
+      - name: Resolve Rust dependency lock
+        run: cargo generate-lockfile --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
+
+      - name: Run Rust Clippy
+        run: cargo clippy --manifest-path experiments/milestone-0/native-runner/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build native runner
+        run: cargo build --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Run spawn-free capability doctor
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { writeFileSync } = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          const executable = process.platform === 'win32'
+            ? 'native-runner/target/debug/agentic-native-runner.exe'
+            : 'native-runner/target/debug/agentic-native-runner';
+          const result = spawnSync(executable, ['doctor'], { encoding: 'utf8' });
+          if (result.error) throw result.error;
+          if (result.status !== 0) {
+            process.stderr.write(result.stderr);
+            process.exit(result.status ?? 1);
+          }
+          const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+          if (lines.length !== 1) throw new Error(`doctor must emit exactly one JSON line; got ${lines.length}`);
+          const document = JSON.parse(lines[0]);
+          if (document.capability_version !== 'runner-capabilities-v0') {
+            throw new Error('unexpected capability version');
+          }
+          writeFileSync('doctor.json', `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+          NODE
+
+      - name: Upload generated Cargo lock
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-runner-lock-${{ matrix.os }}
+          path: experiments/milestone-0/native-runner/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload doctor report
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-runner-doctor-${{ matrix.os }}
+          path: experiments/milestone-0/doctor.json
+          if-no-files-found: error
+          retention-days: 14

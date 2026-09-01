@@ -1,0 +1,3 @@
+mod capabilities;
+
+fn main() {}
