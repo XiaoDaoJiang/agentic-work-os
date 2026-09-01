@@ -86,8 +86,8 @@ pub fn observe_windows_process_truth(
 ) -> WindowsProcessTruth {
     use win32::{
         CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, GetExitCodeProcess,
-        GetLastError, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT, WaitForSingleObject,
+        GetLastError, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WAIT_FAILED,
+        WAIT_OBJECT_0, WAIT_TIMEOUT, WaitForSingleObject,
     };
 
     // SAFETY: query-only access to the process identified by `pid`; a null handle
@@ -119,15 +119,8 @@ pub fn observe_windows_process_truth(
     let mut kernel = win32::FileTime::default();
     let mut user = win32::FileTime::default();
     // SAFETY: `handle` is a valid query handle and all FILETIME pointers are valid.
-    let times_ok = unsafe {
-        GetProcessTimes(
-            handle,
-            &mut creation,
-            &mut exit,
-            &mut kernel,
-            &mut user,
-        )
-    } != 0;
+    let times_ok =
+        unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) } != 0;
     let observed_creation_time = times_ok.then(|| filetime_units(creation));
 
     let mut code = 0_u32;
