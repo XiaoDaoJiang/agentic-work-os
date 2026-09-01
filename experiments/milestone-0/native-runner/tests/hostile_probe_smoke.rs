@@ -111,30 +111,17 @@ fn cancel_smoke_uses_independent_pid_observation_before_cleanup() {
     assert_eq!(summary["stdout_drained"], true, "summary={summary:#?}");
     assert_eq!(summary["stderr_drained"], true, "summary={summary:#?}");
     assert_eq!(
-        summary["observation_window_complete"],
-        true,
+        summary["observation_window_complete"], true,
         "summary={summary:#?}"
     );
-    assert_eq!(
-        summary["observer_complete"],
-        true,
-        "summary={summary:#?}"
-    );
+    assert_eq!(summary["observer_complete"], true, "summary={summary:#?}");
     assert_eq!(
         summary["survivor_pids"],
         serde_json::json!([]),
         "summary={summary:#?}"
     );
-    assert_eq!(
-        summary["cleanup_succeeded"],
-        true,
-        "summary={summary:#?}"
-    );
-    assert_eq!(
-        summary["physical_verdict"],
-        "PASS",
-        "summary={summary:#?}"
-    );
+    assert_eq!(summary["cleanup_succeeded"], true, "summary={summary:#?}");
+    assert_eq!(summary["physical_verdict"], "PASS", "summary={summary:#?}");
 
     fs::remove_dir_all(&root).expect("remove disposable root");
 }
