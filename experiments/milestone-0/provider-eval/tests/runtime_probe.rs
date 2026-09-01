@@ -2,10 +2,10 @@ use std::process::Command;
 
 use serde_json::Value;
 
+const PROBE_EXE: &str = env!("CARGO_BIN_EXE_provider-probe");
+
 fn run_probe(candidate: &str) -> Value {
-    let executable = std::env::var("CARGO_BIN_EXE_provider-probe")
-        .expect("provider-probe binary must exist for runtime evaluation");
-    let output = Command::new(executable)
+    let output = Command::new(PROBE_EXE)
         .args(["--candidate", candidate])
         .output()
         .expect("provider-probe must start");
