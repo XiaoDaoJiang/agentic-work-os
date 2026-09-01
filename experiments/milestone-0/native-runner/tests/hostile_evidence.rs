@@ -1,5 +1,5 @@
 use agentic_native_runner::hostile_evidence::{
-    HostileEvidence, HostileVerdict, evaluate_physical_verdict,
+    HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
 
 fn base_evidence() -> HostileEvidence {
@@ -39,6 +39,19 @@ fn complete_zero_survivor_stable_evidence_passes() {
 fn any_survivor_is_a_hard_failure() {
     let mut evidence = base_evidence();
     evidence.survivor_pids = vec![1235];
+    assert_eq!(evaluate_physical_verdict(&evidence), HostileVerdict::Fail);
+}
+
+#[test]
+fn successful_cleanup_cannot_erase_a_survivor_failure() {
+    let mut evidence = base_evidence();
+    evidence.survivor_pids = vec![1235];
+    assert_eq!(evaluate_physical_verdict(&evidence), HostileVerdict::Fail);
+
+    record_cleanup_outcome(&mut evidence, true);
+
+    assert_eq!(evidence.cleanup_succeeded, Some(true));
+    assert_eq!(evidence.survivor_pids, vec![1235]);
     assert_eq!(evaluate_physical_verdict(&evidence), HostileVerdict::Fail);
 }
 
