@@ -11,7 +11,7 @@
     "path": "experiments/product-validation/sampling-plan.md",
     "git_blob_sha": "95bff9485181787a6055459e6e27000e76b85a26"
   },
-  "selection_rule": "Freeze the nine most recent accessible accepted code-work instances by occurrence time descending, independent of candidate Task-model fit. Exclude pure documentation-only records, research-only discussions, learning questions, and repository operations with no accepted code change.",
+  "selection_rule": "Freeze the nine most recent accessible real code-work instances by occurrence time descending, independent of candidate Task-model fit or success/failure outcome. Exclude pure documentation-only records, research-only discussions, learning questions, and future product ideas; do not exclude failed, cancelled, rejected or superseded engineering work merely because it did not merge.",
   "status": {
     "product_validation": "IN_PROGRESS",
     "nine_real_instances": "FROZEN_PENDING_NEUTRAL_MAPPING",

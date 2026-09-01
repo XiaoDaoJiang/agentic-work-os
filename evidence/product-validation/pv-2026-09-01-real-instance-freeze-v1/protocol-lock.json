@@ -17,14 +17,14 @@
   },
   "selection_rule": {
     "ordering": "occurrence time descending",
-    "inclusion": "accessible real repository code-work with an independent objective and accepted code/configuration change",
+    "inclusion": "accessible real code-work with an independent engineering objective and observable execution evidence, regardless of success, failure, cancellation, rejection or merge outcome",
     "exclusion": [
       "pure documentation-only record",
       "research or learning only",
-      "future product idea",
-      "repository operation with no accepted code/configuration change"
+      "future product idea"
     ],
     "fit_blind": true,
+    "outcome_blind": true,
     "adverse_instances_cannot_be_replaced_after_mapping": true
   },
   "reuse_window_days": 14,

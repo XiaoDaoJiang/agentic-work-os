@@ -2,13 +2,13 @@
 
 > Snapshot: `pv-2026-09-01-real-instance-freeze-v1`  
 > Status: **Frozen before candidate-model mapping**  
-> Selection rule: most recent accessible accepted code-work instances by occurrence time descending. Selection is independent of whether the candidate Task model fits.
+> Selection rule: most recent accessible real code-work instances by occurrence time descending. Selection is independent of candidate Task-model fit and independent of whether the work eventually succeeded, failed, was cancelled, rejected or merged.
 
 ## Selection boundary
 
-Included instances must have an independent engineering objective, a public repository/context reference, observable implementation or configuration change, and an actual outcome. Pure documentation-only records, research/learning discussions, future ideas, and repository operations with no accepted code/configuration change are excluded by rule before fit inspection.
+Included instances must have an independent engineering objective and observable execution evidence in a real repository/context. Pure documentation-only records, research/learning discussions and future ideas are excluded. Failed, cancelled, rejected or superseded engineering work must not be excluded merely because it did not merge.
 
-Occurrence time for this freeze is the GitHub merge timestamp. The repository is `XiaoDaoJiang/Orbis` for all first-nine instances, which gives unusually strong raw evidence: each PR preserves objective, scope, CI/build evidence, artifacts/preview references and final merge outcome.
+Occurrence time for this freeze is the GitHub merge/closure timestamp when available. The repository is `XiaoDaoJiang/Orbis` for all first-nine positions, giving strong raw evidence: PR objective/scope, implementation history, CI/build evidence, artifacts/preview references and actual outcome.
 
 ## Frozen positions
 
@@ -24,19 +24,19 @@ Occurrence time for this freeze is the GitHub merge timestamp. The repository is
 | I08 | ORBIS-PR-7 | 2026-08-31T05:25:27Z | https://github.com/XiaoDaoJiang/Orbis/pull/7 | Retire legacy `docs/**` publishing compatibility and make structured content the only active publishing source | Merged after PR Preview Build, trusted publish and public HTTP smoke evidence |
 | I09 | ORBIS-PR-5 | 2026-08-31T02:32:12Z | https://github.com/XiaoDaoJiang/Orbis/pull/5 | Prepare governed GitHub Pages cutover: required Preview Gate, production smoke checks and dry-run controls | Merged after cleanup Preview lifecycle evidence and `deploy=false` Pages dry run |
 
-## Chronological exclusions immediately around the cutoff
+## Records around the cutoff
 
-These exclusions are made before candidate-model mapping and are based only on the frozen selection rule:
+These records are retained explicitly so the sample boundary is auditable:
 
-- `Orbis PR #6` (`docs: record successful Pages production cutover`) is documentation-only; it records an already-completed production event but introduces no code/configuration change, so it is not a code-work instance for this activity.
-- `Orbis PR #4` (`chore: retire obsolete foundation branch`) was closed without merge and explicitly states that no additional repository changes were intended or accepted; it therefore fails the accepted code/configuration-change inclusion rule.
-- `Orbis PR #3` is the next eligible code-work candidate after the first-nine cutoff and is retained as a possible supplemental instance if trajectory coverage requires more real cases. It must not replace an adverse I01..I09 after mapping.
+- `Orbis PR #6` (`docs: record successful Pages production cutover`) occurred between I08 and I09 but is documentation-only. It records an already-completed production event rather than a new code-work execution, so it is excluded by the predeclared code-work rule.
+- `Orbis PR #4` (`chore: retire obsolete foundation branch`) is older than I09 and therefore falls outside the first-nine cutoff. It is **not** excluded because it failed to merge; instead it is retained as a useful supplemental candidate for a cancellation/supersession trajectory if actual coverage is missing.
+- `Orbis PR #3` is also outside the first-nine cutoff and remains a supplemental candidate. Neither #3 nor #4 may replace an adverse I01..I09 after mapping.
 
 ## Neutral reconstruction notes
 
-The freeze deliberately does **not** yet decide whether any instance is a Project, Task, WorkItem, Run, ChangeSet or another aggregate. The raw PR evidence must be read first as a chronology of intent, changes, verification attempts, artifacts and human merge decisions.
+The freeze deliberately does **not** yet decide whether any instance is a Project, Task, WorkItem, Run, ChangeSet or another aggregate. The raw PR evidence must first be read as a chronology of intent, execution attempts, changes, verification evidence, artifacts and human repository decisions.
 
-Several instances contain multiple failing and succeeding CI checkpoints inside one engineering objective. During mapping, those checkpoints must not automatically be called separate Runs or attempts; the walkthrough must determine whether the candidate model can represent the observed boundaries without rewriting history.
+Several first-nine instances contain multiple failing and succeeding CI checkpoints inside one engineering objective. During mapping, those checkpoints must not automatically be called separate Runs or attempts; the walkthrough must determine whether the candidate model can represent the observed boundaries without rewriting history.
 
 All nine first positions involve one repository. This is a property of the time-ordered sample, not a statement that cross-repository work is unimportant. If TR-08 or other required trajectories are absent, supplemental real instances may be added per protocol but I01..I09 remain frozen.
 
@@ -48,4 +48,4 @@ All nine first positions involve one repository. This is a property of the time-
 - Second reviewer: **NOT_RECORDED**
 - Task Aggregation Decision Record: **NOT_RECORDED**
 
-Next execution action is to create one neutral `domain-instance-mapping.yaml` record per frozen instance, reconstruct ownership/boundaries from the raw PR before assigning fit or trajectory labels, and then evaluate coverage against TR-01..TR-09.
+Next execution action is to create one neutral `domain-instance-mapping.yaml` record per frozen instance, reconstruct ownership/boundaries from the raw evidence before assigning fit or trajectory labels, and then evaluate coverage against TR-01..TR-09.
