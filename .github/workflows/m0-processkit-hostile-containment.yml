@@ -1,0 +1,97 @@
+name: M0 ProcessKit hostile containment
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/m0-processkit-hostile-containment.yml
+      - experiments/milestone-0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PROCESSKIT_VERSION: "3.3.4"
+
+jobs:
+  hostile-containment:
+    name: Hostile containment (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2025
+          - ubuntu-24.04
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22.16.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.16.0
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Verify pinned ProcessKit dependency
+        working-directory: experiments/milestone-0/native-runner
+        shell: bash
+        run: |
+          expected="processkit = \"=${PROCESSKIT_VERSION}\""
+          grep -F "$expected" Cargo.toml
+
+      - name: Validate committed Rust dependency lock
+        run: cargo metadata --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --format-version 1 --no-deps > /dev/null
+
+      - name: Run hostile Node contract tests
+        working-directory: experiments/milestone-0
+        run: node --test test/processkit-hostile-matrix.test.mjs test/processkit-hostile-workflow.test.mjs
+
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
+
+      - name: Run Rust Clippy
+        run: cargo clippy --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build release hostile probe
+        run: cargo build --locked --release --manifest-path experiments/milestone-0/native-runner/Cargo.toml --bin hostile-probe
+
+      - name: Run frozen ProcessKit hostile race matrix
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            probe="native-runner/target/release/hostile-probe.exe"
+          else
+            probe="native-runner/target/release/hostile-probe"
+          fi
+          node_executable="$(node -p 'process.execPath')"
+          node scripts/run-processkit-hostile-matrix.mjs \
+            --mode race \
+            --probe "$probe" \
+            --node "$node_executable" \
+            --fixture "fixtures/hostile-process.mjs" \
+            --scenario-dir "hostile-scenarios" \
+            --output-dir "evidence/processkit-hostile-${RUNNER_OS}"
+
+      - name: Upload raw hostile containment evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: processkit-hostile-evidence-${{ matrix.os }}
+          path: |
+            experiments/milestone-0/evidence/processkit-hostile-${{ runner.os }}/matrix-summary.json
+            experiments/milestone-0/evidence/processkit-hostile-${{ runner.os }}/runs/**
+          if-no-files-found: warn
+          retention-days: 14
