@@ -34,12 +34,18 @@ fn win32_truth_distinguishes_running_from_terminated_but_still_queryable_process
     );
 
     child.kill().expect("terminate child");
-    let status = child.wait().expect("reap child while retaining Child handle");
-    assert!(!status.success(), "terminated child should not report success");
+    let status = child
+        .wait()
+        .expect("reap child while retaining Child handle");
+    assert!(
+        !status.success(),
+        "terminated child should not report success"
+    );
 
     let processkit_alive = process_is_alive(pid, Some(start_time))
         .expect("ProcessKit liveness after termination must return a fact");
-    let terminated = observe_windows_process_truth(pid, Some(start_time), Some(processkit_alive), None);
+    let terminated =
+        observe_windows_process_truth(pid, Some(start_time), Some(processkit_alive), None);
     assert_eq!(
         classify_windows_process_truth(&terminated),
         WindowsTruthVerdict::TerminatedOriginal,
