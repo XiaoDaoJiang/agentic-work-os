@@ -245,12 +245,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         }
         Trigger::Natural => {
             members_before = read_members(&group, "members_before", &mut observation_errors);
-            match time::timeout(
-                Duration::from_millis(config.trigger_ms),
-                child.wait(),
-            )
-            .await
-            {
+            match time::timeout(Duration::from_millis(config.trigger_ms), child.wait()).await {
                 Ok(Ok(_status)) => {}
                 Ok(Err(error)) => teardown_errors.push(format!("root wait: {error}")),
                 Err(_) => {
@@ -330,20 +325,14 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     })
 }
 
-fn required_path(
-    values: &mut BTreeMap<String, OsString>,
-    key: &str,
-) -> Result<PathBuf, String> {
+fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
     values
         .remove(key)
         .map(PathBuf::from)
         .ok_or_else(|| format!("--{key} is required"))
 }
 
-fn required_string(
-    values: &mut BTreeMap<String, OsString>,
-    key: &str,
-) -> Result<String, String> {
+fn required_string(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<String, String> {
     let value = values
         .remove(key)
         .ok_or_else(|| format!("--{key} is required"))?;
@@ -379,14 +368,10 @@ fn prepare_empty_root(root: &Path) -> Result<(), String> {
 }
 
 fn write_effective_scenario(config: &HostileProbeConfig) -> Result<PathBuf, String> {
-    let source = fs::read_to_string(&config.scenario).map_err(|error| {
-        format!(
-            "read scenario {}: {error}",
-            config.scenario.display()
-        )
-    })?;
-    let mut document: Value = serde_json::from_str(&source)
-        .map_err(|error| format!("parse scenario JSON: {error}"))?;
+    let source = fs::read_to_string(&config.scenario)
+        .map_err(|error| format!("read scenario {}: {error}", config.scenario.display()))?;
+    let mut document: Value =
+        serde_json::from_str(&source).map_err(|error| format!("parse scenario JSON: {error}"))?;
     let scenario = document
         .get_mut("hostile_process_v0")
         .and_then(Value::as_object_mut)
@@ -422,11 +407,7 @@ async fn finish_drain(
 ) -> (u64, bool, Option<String>) {
     match time::timeout(budget, &mut task).await {
         Ok(Ok(Ok(bytes))) => (bytes, true, None),
-        Ok(Ok(Err(error))) => (
-            0,
-            false,
-            Some(format!("{stream} drain I/O error: {error}")),
-        ),
+        Ok(Ok(Err(error))) => (0, false, Some(format!("{stream} drain I/O error: {error}"))),
         Ok(Err(error)) => (
             0,
             false,
@@ -443,11 +424,7 @@ async fn finish_drain(
     }
 }
 
-fn read_members(
-    group: &ProcessGroup,
-    label: &str,
-    errors: &mut Vec<String>,
-) -> Vec<u32> {
+fn read_members(group: &ProcessGroup, label: &str, errors: &mut Vec<String>) -> Vec<u32> {
     match group.members() {
         Ok(mut members) => {
             members.sort_unstable();
