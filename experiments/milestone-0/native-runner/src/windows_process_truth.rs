@@ -92,13 +92,7 @@ pub fn observe_windows_process_truth(
 
     // SAFETY: query/synchronize access to the process identified by `pid`; a null
     // handle is classified below and no ownership is inferred from a successful open.
-    let handle = unsafe {
-        OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
-            0,
-            pid,
-        )
-    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
     if handle.is_null() {
         // SAFETY: GetLastError has no preconditions and is read immediately after
         // the failed OpenProcess call.
