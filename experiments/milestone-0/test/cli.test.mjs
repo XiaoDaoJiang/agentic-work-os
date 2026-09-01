@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { sha256Bytes } from '../src/hash.mjs';
 
-const cli = new URL('../src/cli.mjs', import.meta.url);
+const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 
 function runCli(args, cwd) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [cli.pathname, ...args], { cwd });
+    const child = spawn(process.execPath, [cli, ...args], { cwd });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => { stdout += d; });

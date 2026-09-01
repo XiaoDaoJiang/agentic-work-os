@@ -2,16 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 
 const execFileAsync = promisify(execFile);
-const cli = new URL('../src/cli.mjs', import.meta.url);
+const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 
 function runCli(args, cwd) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [cli.pathname, ...args], { cwd });
+    const child = spawn(process.execPath, [cli, ...args], { cwd });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (data) => { stdout += data; });
