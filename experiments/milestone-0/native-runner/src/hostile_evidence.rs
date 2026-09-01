@@ -54,3 +54,7 @@ pub fn evaluate_physical_verdict(evidence: &HostileEvidence) -> HostileVerdict {
 
     HostileVerdict::Pass
 }
+
+pub fn record_cleanup_outcome(evidence: &mut HostileEvidence, succeeded: bool) {
+    evidence.cleanup_succeeded = Some(succeeded);
+}
