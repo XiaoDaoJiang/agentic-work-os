@@ -86,13 +86,19 @@ pub fn observe_windows_process_truth(
 ) -> WindowsProcessTruth {
     use win32::{
         CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, GetExitCodeProcess,
-        GetLastError, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WAIT_FAILED,
-        WAIT_OBJECT_0, WAIT_TIMEOUT, WaitForSingleObject,
+        GetLastError, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, SYNCHRONIZE,
+        WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT, WaitForSingleObject,
     };
 
-    // SAFETY: query-only access to the process identified by `pid`; a null handle
-    // is classified below and no ownership is inferred from a successful open.
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    // SAFETY: query/synchronize access to the process identified by `pid`; a null
+    // handle is classified below and no ownership is inferred from a successful open.
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+            0,
+            pid,
+        )
+    };
     if handle.is_null() {
         // SAFETY: GetLastError has no preconditions and is read immediately after
         // the failed OpenProcess call.
@@ -128,8 +134,8 @@ pub fn observe_windows_process_truth(
     let code_ok = unsafe { GetExitCodeProcess(handle, &mut code) } != 0;
     let exit_code = code_ok.then_some(code);
 
-    // SAFETY: zero-timeout observation of a valid process handle; this does not
-    // mutate or terminate the process.
+    // SAFETY: zero-timeout observation of a process handle opened with SYNCHRONIZE;
+    // this does not mutate or terminate the process.
     let wait_state = match unsafe { WaitForSingleObject(handle, 0) } {
         WAIT_OBJECT_0 => Win32WaitState::Signaled,
         WAIT_TIMEOUT => Win32WaitState::Timeout,
@@ -164,6 +170,7 @@ mod win32 {
 
     pub type Handle = *mut c_void;
     pub const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    pub const SYNCHRONIZE: u32 = 0x0010_0000;
     pub const ERROR_ACCESS_DENIED: u32 = 5;
     pub const ERROR_INVALID_PARAMETER: u32 = 87;
     pub const WAIT_OBJECT_0: u32 = 0;
