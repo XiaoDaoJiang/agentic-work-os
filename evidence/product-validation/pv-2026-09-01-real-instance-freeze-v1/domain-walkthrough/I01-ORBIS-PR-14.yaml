@@ -1,0 +1,32 @@
+instance_id: ORBIS-PR-14
+source_date: 2026-09-01T03:57:12Z
+selection_rule_position: I01
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/14
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33465703923
+    observed_outcome: failed
+    evidence: weekly-v1 renderer missing after baseline contracts passed
+  - checkpoint_id: gha-33465780926
+    observed_outcome: succeeded
+    evidence: renderer and registry contracts green while real Weekly remained disabled
+  - checkpoint_id: gha-33465986406
+    observed_outcome: failed
+    evidence: mixed integration expected a published weekly-v1 seed while real Weekly was still disabled
+  - checkpoint_id: gha-33466065425
+    observed_outcome: succeeded
+    evidence: final Daily + Weekly + Talk mixed integration and artifact upload green
+workspace_ownership: "repository branch feat/weekly-v1-presentation is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR and GitHub Actions checkpoints are uniquely attributable to PR #14; coding-agent native events are not public"
+artifact_ownership: "final artifact 9784902857 and preview-pr-14 are uniquely attributable to PR #14"
+review_decision_ownership: "GitHub merge decision for PR #14; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

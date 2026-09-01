@@ -1,0 +1,38 @@
+instance_id: ORBIS-PR-13
+source_date: 2026-09-01T01:58:51Z
+selection_rule_position: I02
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/13
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33458758991
+    observed_outcome: failed
+    evidence: Weekly schema capability missing after existing baseline contracts passed
+  - checkpoint_id: gha-33458857777
+    observed_outcome: succeeded
+    evidence: cadence-specific schema split green while Daily remained compatible
+  - checkpoint_id: gha-33459037860
+    observed_outcome: failed
+    evidence: shared reading page still assumed Daily fields and failed on real Weekly
+  - checkpoint_id: gha-33459197423
+    observed_outcome: succeeded
+    evidence: Weekly reading path and cadence-aware body rendering green
+  - checkpoint_id: gha-33459444942
+    observed_outcome: diagnostic_gap_observed
+    evidence: invalid Weekly was rejected but nested Zod diagnostics did not expose the offending signals key clearly
+  - checkpoint_id: gha-33459852995
+    observed_outcome: succeeded
+    evidence: final build, artifact upload, Weekly discovery and Daily-isolation checks green
+workspace_ownership: "repository branch feat/weekly-brief-model-reading is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR and GitHub Actions checkpoints are uniquely attributable to PR #13; coding-agent native events are not public"
+artifact_ownership: "final artifact 9782788538 and preview-pr-13 are uniquely attributable to PR #13"
+review_decision_ownership: "GitHub merge decision for PR #13; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

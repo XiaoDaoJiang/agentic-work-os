@@ -14,13 +14,15 @@
   "selection_rule": "Freeze the nine most recent accessible real code-work instances by occurrence time descending, independent of candidate Task-model fit or success/failure outcome. Exclude pure documentation-only records, research-only discussions, learning questions, and future product ideas; do not exclude failed, cancelled, rejected or superseded engineering work merely because it did not merge.",
   "status": {
     "product_validation": "IN_PROGRESS",
-    "nine_real_instances": "FROZEN_PENDING_NEUTRAL_MAPPING",
+    "nine_real_instances": "FROZEN_NEUTRAL_MAPPING_COMPLETE_FIT_PENDING",
     "founder_validation": "STRONG_SIGNAL_SUPPORTING_ONLY",
     "external_participants": "NOT_STARTED"
   },
   "counts": {
     "frozen_domain_instances": 9,
-    "mapped_domain_instances": 0,
+    "mapped_domain_instances": 9,
+    "fit_classified_domain_instances": 0,
+    "distinct_actual_end_to_end_trajectories": 0,
     "qualified_external_participants": 0,
     "external_real_problems_completed": 0,
     "independent_users_with_qualifying_reuse": 0
@@ -33,7 +35,7 @@
   "non_implications": [
     "This snapshot is not a Product Validation Gate PASS.",
     "Founder evidence does not count as an external participant or qualifying reuse.",
-    "Freezing nine instances does not establish Task Aggregation fit until neutral mapping and trajectory coverage are completed.",
+    "Neutral mapping does not establish Task Aggregation fit until fit classification and trajectory coverage are completed.",
     "No Product MVP WWA, production Task schema, or product UI is authorized."
   ]
 }

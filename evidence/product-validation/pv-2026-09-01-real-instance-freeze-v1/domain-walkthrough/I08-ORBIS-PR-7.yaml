@@ -1,0 +1,26 @@
+instance_id: ORBIS-PR-7
+source_date: 2026-08-31T05:25:27Z
+selection_rule_position: I08
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/7
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33354363317
+    observed_outcome: succeeded
+    evidence: PR Preview Build completed with frozen install, Path Guard and structured-only build behavior
+  - checkpoint_id: gha-33354417649
+    observed_outcome: succeeded
+    evidence: trusted Preview Publish completed and public HTTP availability smoke passed
+workspace_ownership: "repository branch refactor/retire-legacy-architecture is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR/build/publish checkpoints are uniquely attributable to PR #7; coding-agent native events are not public"
+artifact_ownership: "preview-pr-7 public preview and referenced GitHub Actions evidence are uniquely attributable to PR #7"
+review_decision_ownership: "GitHub merge decision for PR #7"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

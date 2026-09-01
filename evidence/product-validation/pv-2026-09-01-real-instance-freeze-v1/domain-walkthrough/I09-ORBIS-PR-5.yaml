@@ -1,0 +1,26 @@
+instance_id: ORBIS-PR-5
+source_date: 2026-08-31T02:32:12Z
+selection_rule_position: I09
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/5
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_repository_governance_plan
+run_attempts:
+  - checkpoint_id: cleanup-pr-3-lifecycle
+    observed_outcome: succeeded
+    evidence: prior cleanup PR completed read-only build, trusted publish, public smoke, close and preview-branch deletion lifecycle
+  - checkpoint_id: gha-33350530793
+    observed_outcome: succeeded
+    evidence: Orbis Pages Production dry run from main with deploy=false completed full build and Pages artifact upload while deployment stayed skipped
+workspace_ownership: "repository branch planning/pages-cutover is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "repository governance/workflow events referenced by PR #5 are attributable to the cutover preparation objective; coding-agent native events are not public"
+artifact_ownership: "dry-run Pages artifact 9743448941 and recorded digest are attributable to the cutover preparation checkpoint"
+review_decision_ownership: "GitHub merge decision for PR #5; later production cutover remained an explicitly separate human decision"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null
