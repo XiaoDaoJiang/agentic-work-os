@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  contract-red-green:
-    name: Provider Eval Contract (${{ matrix.os }})
+  provider-eval:
+    name: Provider Eval (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -27,10 +27,61 @@ jobs:
           - ubuntu-24.04
           - windows-2025
           - macos-15
+
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: rustfmt, clippy
-      - name: Run provider evaluation contract tests
+
+      - name: Run provider evaluation tests
         run: cargo test --manifest-path experiments/milestone-0/provider-eval/Cargo.toml
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/provider-eval/Cargo.toml -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build release probe
+        run: cargo build --release --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --bin provider-probe
+
+      - name: Capture runtime provider evidence
+        shell: bash
+        working-directory: experiments/milestone-0/provider-eval
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            probe="target/release/provider-probe.exe"
+          else
+            probe="target/release/provider-probe"
+          fi
+          "$probe" --candidate processkit > evidence/processkit.json
+          "$probe" --candidate process-wrap > evidence/process-wrap.json
+          "$probe" --candidate direct-os > evidence/direct-os.json
+          printf '{"schema":"containment-provider-build-v0","runner_os":"%s","binary_size_bytes":%s}\n' \
+            "$RUNNER_OS" "$(wc -c < "$probe" | tr -d ' ')" > evidence/build.json
+          cat evidence/processkit.json
+          cat evidence/process-wrap.json
+          cat evidence/direct-os.json
+          cat evidence/build.json
+
+      - name: Upload provider evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: containment-provider-eval-${{ matrix.os }}
+          path: experiments/milestone-0/provider-eval/evidence/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload resolved Cargo lock
+        uses: actions/upload-artifact@v7
+        with:
+          name: containment-provider-lock-${{ matrix.os }}
+          path: experiments/milestone-0/provider-eval/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
