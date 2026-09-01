@@ -636,10 +636,10 @@ fn strict_finalize_control(
     };
     for pid in snapshot.pids {
         fixture_pids.insert(pid);
-        if !identities.contains_key(&pid) {
+        if let std::collections::btree_map::Entry::Vacant(entry) = identities.entry(pid) {
             match resolve_identity(pid, true) {
                 Ok(Some(state)) => {
-                    identities.insert(pid, state);
+                    entry.insert(state);
                 }
                 Ok(None) => {}
                 Err(error) => errors.push(error),
