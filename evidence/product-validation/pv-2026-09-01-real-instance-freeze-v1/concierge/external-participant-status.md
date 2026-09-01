@@ -12,7 +12,7 @@
 | External real problems completed | 0 | 5 |
 | Independent users with qualifying spontaneous reuse | 0 | at least 2 for A3 support |
 
-No colleague, reviewer, open-source maintainer, imagined persona or founder use is counted automatically. A participant only receives P01/P02/P03 after passing the frozen qualification rule.
+Founder usage is explicitly excluded from these counters. No colleague, reviewer, open-source maintainer or imagined persona is counted automatically.
 
 ## Qualification rule
 
@@ -20,7 +20,7 @@ A qualifying participant must:
 
 - be an individual developer who already uses a Coding Agent in real development work;
 - bring a current real code problem that already belongs to their work;
-- have a real repository or a user-confirmed safe copy/context representing the problem;
+- have a real repository or user-confirmed safe copy/context representing the problem;
 - be able to state the real objective / DoD and one VerificationInvocation;
 - be willing to use the existing low-fidelity materials rather than a product UI.
 
@@ -34,7 +34,7 @@ The invitation deliberately avoids saying that Project-native or Task-first is e
 
 ## First-contact screening record
 
-For each candidate, keep the identity map privately and only commit the anonymous qualification result:
+Keep the identity map privately and commit only the anonymous qualification result:
 
 ```text
 candidate_ref: private-only
@@ -52,15 +52,7 @@ P01..P03 are assigned in qualification order and are not reordered after any obs
 
 ## First real problem intake
 
-Before any A/B/C walkthrough, copy the frozen `real-problem-fact-pack.md` template and record:
-
-- problem source and first-observed time;
-- objective and DoD in the participant's own existing work terms;
-- repository/context reference;
-- current baseline CLI/Git workflow;
-- one complete VerificationInvocation;
-- whether the participant already planned to work on the issue independent of the study;
-- fact-pack hash before comparison.
+Before any A/B/C walkthrough, copy the frozen `real-problem-fact-pack.md` template and record problem source/time, objective/DoD, repository/context, baseline CLI/Git workflow and one complete VerificationInvocation. Freeze/hash the fact pack before comparison.
 
 The researcher must not invent, split or replace the problem to improve comparability.
 
@@ -68,7 +60,7 @@ The researcher must not invent, split or replace the problem to improve comparab
 
 Each participant must eventually provide one usable A↔B and one usable B↔C observation using the frozen entry-order matrix. B and C must have the same archive contract and presentation. C may add only the pre-execution minimal Task contract.
 
-Prompted behavior is recorded as prompted. A low-fidelity scheduled recovery walkthrough may test usability but cannot be treated as proof that natural recovery frequency exists.
+Prompted behavior is recorded as prompted. A scheduled low-fidelity recovery walkthrough may test usability but cannot prove natural recovery frequency.
 
 ## Reuse-window rule
 
@@ -79,8 +71,8 @@ The 14-calendar-day observation window begins at first-problem Review completion
 - no reward conditioned on second use;
 - scheduled research tasks may be recorded as real tasks but cannot count as spontaneous reuse.
 
-A second use is counted only after the frozen `reuse-audit.md` passes all conditions. Same-task continuation, Reject/Cancel retry, artificially split problems, Codex-only return and facilitator-initiated use are excluded.
+A second use is counted only after `reuse-audit.md` passes all conditions. Same-task continuation, Reject/Cancel retry, artificially split problems, Codex-only return and facilitator-initiated use are excluded.
 
-## Blocking condition
+## Current blocker
 
-Until real external participant evidence exists, the Product Validation Gate cannot be finalized as PASS regardless of founder strength or nine-instance domain evidence.
+No external participant evidence has been recorded yet. Until real P01..P03 evidence exists, Project-native and Task-first cannot receive their required external behavior comparisons, A3 reuse cannot be supported, and the Product Validation Gate cannot be finalized as PASS regardless of founder strength or first-nine Task fit.
