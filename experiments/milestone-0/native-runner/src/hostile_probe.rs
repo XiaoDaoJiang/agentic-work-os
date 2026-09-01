@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use processkit::ProcessGroup;
+use processkit::{ProcessGroup, process_info, process_is_alive};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -14,8 +14,12 @@ use tokio::process::Child;
 use tokio::task::JoinHandle;
 use tokio::time;
 
+use crate::hostile_evidence::{
+    HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
+};
+
 const PROCESSKIT_VERSION: &str = "3.3.4";
-const PHYSICAL_VERDICT: &str = "INCONCLUSIVE";
+const FILE_FINGERPRINT_ALGORITHM: &str = "size+fnv1a64";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
@@ -166,6 +170,7 @@ pub struct HostileProbeSummary {
     pub members_before: Vec<u32>,
     pub members_after: Vec<u32>,
     pub fixture_pids: Vec<u32>,
+    pub survivor_pids: Vec<u32>,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
     pub stdout_drained: bool,
@@ -174,9 +179,33 @@ pub struct HostileProbeSummary {
     pub observation_window_complete: bool,
     pub observer_complete: bool,
     pub control_parse_complete: bool,
+    pub file_fingerprint_algorithm: &'static str,
     pub observed_late_write: bool,
     pub physical_verdict: &'static str,
+    pub cleanup_succeeded: bool,
     pub observation_errors: Vec<String>,
+    pub cleanup_errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PidAnchor {
+    pid: u32,
+    start_time: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFingerprint {
+    exists: bool,
+    size: u64,
+    fnv1a64: u64,
+}
+
+struct ObservationOutcome {
+    members_after: Vec<u32>,
+    survivor_pids: Vec<u32>,
+    observed_late_write: bool,
+    observer_complete: bool,
+    control_parse_complete: bool,
 }
 
 pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary, String> {
@@ -216,9 +245,8 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         .spawn(command)
         .map_err(|error| format!("spawn hostile fixture: {error}"))?;
     let root_pid = child.id();
-    if root_pid.is_none() {
-        return Err("spawned hostile fixture did not expose a root pid".to_owned());
-    }
+    let root_pid_value = root_pid
+        .ok_or_else(|| "spawned hostile fixture did not expose a root pid".to_owned())?;
     let stdout = child
         .stdout
         .take()
@@ -232,11 +260,27 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
 
     let mut observation_errors = Vec::new();
     let mut teardown_errors = Vec::new();
+    let mut fixture_pids = BTreeSet::from([root_pid_value]);
+    let mut pid_anchors = BTreeMap::new();
+    let mut observer_complete = capture_new_pid_anchor(
+        root_pid_value,
+        &mut pid_anchors,
+        &mut observation_errors,
+    );
+    let mut control_parse_complete = true;
     let members_before;
 
     match config.trigger {
         Trigger::Cancel | Trigger::Timeout => {
             time::sleep(Duration::from_millis(config.trigger_ms)).await;
+            let refresh = refresh_control_catalog(
+                &control_file,
+                &mut fixture_pids,
+                &mut pid_anchors,
+                &mut observation_errors,
+            );
+            control_parse_complete &= refresh.control_parse_complete;
+            observer_complete &= refresh.observer_complete;
             members_before = read_members(&group, "members_before", &mut observation_errors);
             if let Err(error) = group.kill_all() {
                 teardown_errors.push(format!("kill_all: {error}"));
@@ -246,9 +290,26 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         Trigger::Natural => {
             members_before = read_members(&group, "members_before", &mut observation_errors);
             match time::timeout(Duration::from_millis(config.trigger_ms), child.wait()).await {
-                Ok(Ok(_status)) => {}
+                Ok(Ok(_status)) => {
+                    let refresh = refresh_control_catalog(
+                        &control_file,
+                        &mut fixture_pids,
+                        &mut pid_anchors,
+                        &mut observation_errors,
+                    );
+                    control_parse_complete &= refresh.control_parse_complete;
+                    observer_complete &= refresh.observer_complete;
+                }
                 Ok(Err(error)) => teardown_errors.push(format!("root wait: {error}")),
                 Err(_) => {
+                    let refresh = refresh_control_catalog(
+                        &control_file,
+                        &mut fixture_pids,
+                        &mut pid_anchors,
+                        &mut observation_errors,
+                    );
+                    control_parse_complete &= refresh.control_parse_complete;
+                    observer_complete &= refresh.observer_complete;
                     teardown_errors.push(format!(
                         "natural harness deadline elapsed after {} ms",
                         config.trigger_ms
@@ -274,24 +335,76 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         observation_errors.push(error);
     }
 
-    let baseline_control = file_len(&control_file, &mut observation_errors);
-    let baseline_marker = file_len(&marker_file, &mut observation_errors);
-    let (members_after, observed_late_write) = observe_window(
+    let refresh = refresh_control_catalog(
+        &control_file,
+        &mut fixture_pids,
+        &mut pid_anchors,
+        &mut observation_errors,
+    );
+    control_parse_complete &= refresh.control_parse_complete;
+    observer_complete &= refresh.observer_complete;
+
+    let baseline_control = fingerprint_file(&control_file, &mut observation_errors);
+    let baseline_marker = fingerprint_file(&marker_file, &mut observation_errors);
+    observer_complete &= baseline_control.is_some() && baseline_marker.is_some();
+
+    let observation = observe_window(
         &group,
         &control_file,
         &marker_file,
         baseline_control,
         baseline_marker,
+        &mut fixture_pids,
+        &mut pid_anchors,
         Duration::from_millis(config.post_stop_ms),
         Duration::from_millis(config.sample_ms),
         &mut observation_errors,
     )
     .await;
+    observer_complete &= observation.observer_complete;
+    control_parse_complete &= observation.control_parse_complete;
+    observer_complete &= control_parse_complete;
 
-    let (fixture_pids, control_parse_complete) = parse_fixture_pids(&control_file);
-    if !control_parse_complete {
-        observation_errors.push("control JSONL was missing or not completely parseable".to_owned());
-    }
+    let teardown_error = if teardown_errors.is_empty() {
+        None
+    } else {
+        Some(teardown_errors.join("; "))
+    };
+    let mut evidence = HostileEvidence {
+        scenario_id: scenario_id.clone(),
+        seed: config.seed,
+        repetition: config.repetition,
+        platform: std::env::consts::OS.to_owned(),
+        architecture: std::env::consts::ARCH.to_owned(),
+        processkit_version: PROCESSKIT_VERSION.to_owned(),
+        actual_mechanism: actual_mechanism.clone(),
+        trigger: config.trigger.name().to_owned(),
+        root_pid,
+        members_before: members_before.clone(),
+        members_after: observation.members_after.clone(),
+        fixture_pids: fixture_pids.iter().copied().collect(),
+        survivor_pids: observation.survivor_pids.clone(),
+        stdout_bytes,
+        stderr_bytes,
+        stdout_drained,
+        stderr_drained,
+        teardown_error: teardown_error.clone(),
+        observer_complete,
+        observed_late_write: observation.observed_late_write,
+        cleanup_succeeded: None,
+        verdict_reasons: Vec::new(),
+    };
+
+    let physical_verdict = evaluate_physical_verdict(&evidence);
+    let physical_verdict_name = verdict_name(physical_verdict);
+    let (cleanup_succeeded, cleanup_errors) = cleanup_survivors(
+        &observation.survivor_pids,
+        &pid_anchors,
+        Duration::from_secs(3),
+        Duration::from_millis(config.sample_ms),
+    )
+    .await;
+    record_cleanup_outcome(&mut evidence, cleanup_succeeded);
 
     Ok(HostileProbeSummary {
         schema: "processkit-hostile-probe-v0",
@@ -305,24 +418,32 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         trigger: config.trigger.name(),
         root_pid,
         members_before,
-        members_after,
-        fixture_pids,
+        members_after: observation.members_after,
+        fixture_pids: fixture_pids.into_iter().collect(),
+        survivor_pids: observation.survivor_pids,
         stdout_bytes,
         stderr_bytes,
         stdout_drained,
         stderr_drained,
-        teardown_error: if teardown_errors.is_empty() {
-            None
-        } else {
-            Some(teardown_errors.join("; "))
-        },
+        teardown_error,
         observation_window_complete: true,
-        observer_complete: false,
+        observer_complete,
         control_parse_complete,
-        observed_late_write,
-        physical_verdict: PHYSICAL_VERDICT,
+        file_fingerprint_algorithm: FILE_FINGERPRINT_ALGORITHM,
+        observed_late_write: observation.observed_late_write,
+        physical_verdict: physical_verdict_name,
+        cleanup_succeeded,
         observation_errors,
+        cleanup_errors,
     })
+}
+
+fn verdict_name(verdict: HostileVerdict) -> &'static str {
+    match verdict {
+        HostileVerdict::Pass => "PASS",
+        HostileVerdict::Fail => "FAIL",
+        HostileVerdict::Inconclusive => "INCONCLUSIVE",
+    }
 }
 
 fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
@@ -457,15 +578,88 @@ async fn reap_root(child: &mut Child, group: &ProcessGroup, errors: &mut Vec<Str
     }
 }
 
-fn file_len(path: &Path, errors: &mut Vec<String>) -> u64 {
-    match fs::metadata(path) {
-        Ok(metadata) => metadata.len(),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
-        Err(error) => {
-            errors.push(format!("metadata {}: {error}", path.display()));
-            0
+struct CatalogRefresh {
+    observer_complete: bool,
+    control_parse_complete: bool,
+}
+
+fn refresh_control_catalog(
+    control_file: &Path,
+    fixture_pids: &mut BTreeSet<u32>,
+    anchors: &mut BTreeMap<u32, PidAnchor>,
+    errors: &mut Vec<String>,
+) -> CatalogRefresh {
+    let (pids, control_parse_complete) = parse_fixture_pids(control_file);
+    let mut observer_complete = true;
+    for pid in pids {
+        if fixture_pids.insert(pid) {
+            observer_complete &= capture_new_pid_anchor(pid, anchors, errors);
         }
     }
+    if !control_parse_complete {
+        errors.push("control JSONL was missing or not completely parseable".to_owned());
+    }
+    CatalogRefresh {
+        observer_complete,
+        control_parse_complete,
+    }
+}
+
+fn capture_new_pid_anchor(
+    pid: u32,
+    anchors: &mut BTreeMap<u32, PidAnchor>,
+    errors: &mut Vec<String>,
+) -> bool {
+    if anchors.contains_key(&pid) {
+        return true;
+    }
+    match process_info(pid) {
+        Ok(Some(info)) => match info.start_time() {
+            Some(start_time) => {
+                anchors.insert(pid, PidAnchor { pid, start_time });
+                true
+            }
+            None => {
+                errors.push(format!(
+                    "process_info({pid}) did not provide a reuse-safe start time"
+                ));
+                false
+            }
+        },
+        Ok(None) => true,
+        Err(error) => {
+            errors.push(format!("process_info({pid}): {error}"));
+            false
+        }
+    }
+}
+
+fn fingerprint_file(path: &Path, errors: &mut Vec<String>) -> Option<FileFingerprint> {
+    match fs::read(path) {
+        Ok(bytes) => Some(FileFingerprint {
+            exists: true,
+            size: bytes.len() as u64,
+            fnv1a64: fnv1a64(&bytes),
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Some(FileFingerprint {
+            exists: false,
+            size: 0,
+            fnv1a64: fnv1a64(&[]),
+        }),
+        Err(error) => {
+            errors.push(format!("fingerprint {}: {error}", path.display()));
+            None
+        }
+    }
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -473,28 +667,188 @@ async fn observe_window(
     group: &ProcessGroup,
     control_file: &Path,
     marker_file: &Path,
-    baseline_control: u64,
-    baseline_marker: u64,
+    baseline_control: Option<FileFingerprint>,
+    baseline_marker: Option<FileFingerprint>,
+    fixture_pids: &mut BTreeSet<u32>,
+    anchors: &mut BTreeMap<u32, PidAnchor>,
     duration: Duration,
     sample: Duration,
     errors: &mut Vec<String>,
-) -> (Vec<u32>, bool) {
+) -> ObservationOutcome {
     let deadline = Instant::now() + duration;
-    let mut last_members = Vec::new();
+    let mut members_after = read_members(group, "post-stop members", errors);
+    let mut survivor_pids = BTreeSet::new();
     let mut observed_late_write = false;
+    let mut observer_complete = true;
+    let mut control_parse_complete = true;
+
+    sample_pid_liveness(anchors, &mut survivor_pids, errors, &mut observer_complete);
+    compare_file_fingerprint(
+        control_file,
+        baseline_control,
+        errors,
+        &mut observer_complete,
+        &mut observed_late_write,
+    );
+    compare_file_fingerprint(
+        marker_file,
+        baseline_marker,
+        errors,
+        &mut observer_complete,
+        &mut observed_late_write,
+    );
 
     while Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
         time::sleep(std::cmp::min(sample, remaining)).await;
-        last_members = read_members(group, "post-stop members", errors);
-        let control_len = file_len(control_file, errors);
-        let marker_len = file_len(marker_file, errors);
-        if control_len > baseline_control || marker_len > baseline_marker {
-            observed_late_write = true;
+
+        let refresh = refresh_control_catalog(control_file, fixture_pids, anchors, errors);
+        observer_complete &= refresh.observer_complete;
+        control_parse_complete &= refresh.control_parse_complete;
+        members_after = read_members(group, "post-stop members", errors);
+        sample_pid_liveness(anchors, &mut survivor_pids, errors, &mut observer_complete);
+        compare_file_fingerprint(
+            control_file,
+            baseline_control,
+            errors,
+            &mut observer_complete,
+            &mut observed_late_write,
+        );
+        compare_file_fingerprint(
+            marker_file,
+            baseline_marker,
+            errors,
+            &mut observer_complete,
+            &mut observed_late_write,
+        );
+    }
+
+    ObservationOutcome {
+        members_after,
+        survivor_pids: survivor_pids.into_iter().collect(),
+        observed_late_write,
+        observer_complete,
+        control_parse_complete,
+    }
+}
+
+fn sample_pid_liveness(
+    anchors: &BTreeMap<u32, PidAnchor>,
+    survivors: &mut BTreeSet<u32>,
+    errors: &mut Vec<String>,
+    observer_complete: &mut bool,
+) {
+    for anchor in anchors.values() {
+        match process_is_alive(anchor.pid, Some(anchor.start_time)) {
+            Ok(true) => {
+                survivors.insert(anchor.pid);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                errors.push(format!(
+                    "process_is_alive({}, {}): {error}",
+                    anchor.pid, anchor.start_time
+                ));
+                *observer_complete = false;
+            }
+        }
+    }
+}
+
+fn compare_file_fingerprint(
+    path: &Path,
+    baseline: Option<FileFingerprint>,
+    errors: &mut Vec<String>,
+    observer_complete: &mut bool,
+    observed_late_write: &mut bool,
+) {
+    let current = fingerprint_file(path, errors);
+    match (baseline, current) {
+        (Some(expected), Some(actual)) => {
+            if actual != expected {
+                *observed_late_write = true;
+            }
+        }
+        _ => *observer_complete = false,
+    }
+}
+
+async fn cleanup_survivors(
+    survivor_pids: &[u32],
+    anchors: &BTreeMap<u32, PidAnchor>,
+    timeout: Duration,
+    sample: Duration,
+) -> (bool, Vec<String>) {
+    if survivor_pids.is_empty() {
+        return (true, Vec::new());
+    }
+
+    let mut errors = Vec::new();
+    let cleanup_group = match ProcessGroup::new() {
+        Ok(group) => group,
+        Err(error) => {
+            return (
+                false,
+                vec![format!("create cleanup ProcessGroup: {error}")],
+            );
+        }
+    };
+    let mut adopted_any = false;
+
+    for pid in survivor_pids {
+        let Some(anchor) = anchors.get(pid) else {
+            errors.push(format!("survivor {pid} has no reuse-safe identity anchor"));
+            continue;
+        };
+        match process_is_alive(*pid, Some(anchor.start_time)) {
+            Ok(false) => {}
+            Ok(true) => match cleanup_group.adopt_external(*pid) {
+                Ok(()) => adopted_any = true,
+                Err(error) => errors.push(format!("cleanup adopt_external({pid}): {error}")),
+            },
+            Err(error) => errors.push(format!(
+                "cleanup liveness check ({pid}, {}): {error}",
+                anchor.start_time
+            )),
         }
     }
 
-    (last_members, observed_late_write)
+    if adopted_any && let Err(error) = cleanup_group.kill_all() {
+        errors.push(format!("cleanup kill_all: {error}"));
+    }
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        let mut any_alive = false;
+        for pid in survivor_pids {
+            let Some(anchor) = anchors.get(pid) else {
+                any_alive = true;
+                continue;
+            };
+            match process_is_alive(*pid, Some(anchor.start_time)) {
+                Ok(true) => any_alive = true,
+                Ok(false) => {}
+                Err(error) => {
+                    any_alive = true;
+                    errors.push(format!(
+                        "cleanup final liveness ({pid}, {}): {error}",
+                        anchor.start_time
+                    ));
+                }
+            }
+        }
+        if !any_alive {
+            return (errors.is_empty(), errors);
+        }
+        if Instant::now() >= deadline {
+            errors.push(format!(
+                "cleanup survivors remained alive after {} ms",
+                timeout.as_millis()
+            ));
+            return (false, errors);
+        }
+        time::sleep(sample).await;
+    }
 }
 
 fn parse_fixture_pids(control_file: &Path) -> (Vec<u32>, bool) {
