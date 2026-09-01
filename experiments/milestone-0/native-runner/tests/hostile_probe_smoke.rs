@@ -86,8 +86,15 @@ fn cancel_smoke_reports_actual_group_and_completed_physical_observation_window()
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("summary stdout must be UTF-8");
-    let lines: Vec<_> = stdout.lines().filter(|line| !line.trim().is_empty()).collect();
-    assert_eq!(lines.len(), 1, "probe must emit exactly one summary JSON line");
+    let lines: Vec<_> = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "probe must emit exactly one summary JSON line"
+    );
 
     let summary: Value = serde_json::from_str(lines[0]).expect("summary must be JSON");
     assert_eq!(summary["scenario_id"], "late-output-hang");
@@ -97,7 +104,10 @@ fn cancel_smoke_reports_actual_group_and_completed_physical_observation_window()
             .is_some_and(|value| !value.is_empty()),
         "actual ProcessKit group mechanism is required"
     );
-    assert!(summary["root_pid"].as_u64().is_some(), "root pid is required");
+    assert!(
+        summary["root_pid"].as_u64().is_some(),
+        "root pid is required"
+    );
     assert_eq!(summary["stdout_drained"], true);
     assert_eq!(summary["stderr_drained"], true);
     assert_eq!(summary["observation_window_complete"], true);
