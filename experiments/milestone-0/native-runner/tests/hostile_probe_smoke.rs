@@ -47,7 +47,7 @@ fn disposable_root() -> PathBuf {
 }
 
 #[test]
-fn cancel_smoke_reports_actual_group_and_completed_physical_observation_window() {
+fn cancel_smoke_uses_independent_pid_observation_before_cleanup() {
     let root = disposable_root();
     fs::create_dir_all(&root).expect("create disposable root");
     let milestone = milestone_root();
@@ -111,8 +111,10 @@ fn cancel_smoke_reports_actual_group_and_completed_physical_observation_window()
     assert_eq!(summary["stdout_drained"], true);
     assert_eq!(summary["stderr_drained"], true);
     assert_eq!(summary["observation_window_complete"], true);
-    assert_eq!(summary["observer_complete"], false);
-    assert_eq!(summary["physical_verdict"], "INCONCLUSIVE");
+    assert_eq!(summary["observer_complete"], true);
+    assert_eq!(summary["survivor_pids"], serde_json::json!([]));
+    assert_eq!(summary["cleanup_succeeded"], true);
+    assert_eq!(summary["physical_verdict"], "PASS");
 
     fs::remove_dir_all(&root).expect("remove disposable root");
 }
