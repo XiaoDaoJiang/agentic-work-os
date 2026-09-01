@@ -20,6 +20,7 @@ use crate::hostile_evidence::{
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
 const FILE_FINGERPRINT_ALGORITHM: &str = "size+fnv1a64";
+const ROOT_READY_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
@@ -275,6 +276,14 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     let mut fixture_pids = BTreeSet::from([root_pid_value]);
     let mut identities = BTreeMap::new();
     try_resolve_identity(root_pid_value, false, &mut identities);
+    wait_for_root_fixture_started(
+        &control_file,
+        root_pid_value,
+        Duration::from_millis(ROOT_READY_TIMEOUT_MS),
+        Duration::from_millis(config.sample_ms),
+    )
+    .await?;
+    best_effort_discover_control(&control_file, &mut fixture_pids, &mut identities, false);
     let members_before;
 
     match config.trigger {
@@ -562,6 +571,64 @@ async fn reap_root(child: &mut Child, group: &ProcessGroup, errors: &mut Vec<Str
         Ok(Err(error)) => errors.push(format!("root cleanup wait: {error}")),
         Err(_) => errors.push("root cleanup wait exceeded 2 seconds".to_owned()),
     }
+}
+
+async fn wait_for_root_fixture_started(
+    control_file: &Path,
+    root_pid: u32,
+    timeout: Duration,
+    sample: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if root_fixture_started(control_file, root_pid)? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "root fixture.started for pid {root_pid} was not observed within {} ms",
+                timeout.as_millis()
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        time::sleep(std::cmp::min(sample, remaining)).await;
+    }
+}
+
+fn root_fixture_started(control_file: &Path, root_pid: u32) -> Result<bool, String> {
+    let content = match fs::read_to_string(control_file) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "read control JSONL {} while waiting for root readiness: {error}",
+                control_file.display()
+            ));
+        }
+    };
+
+    let has_partial_tail = !content.is_empty() && !content.ends_with('\n');
+    let parse_end = if has_partial_tail {
+        content.rfind('\n').map_or(0, |index| index + 1)
+    } else {
+        content.len()
+    };
+
+    for line in content[..parse_end]
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let value: Value = serde_json::from_str(line)
+            .map_err(|error| format!("parse completed control JSONL readiness record: {error}"))?;
+        if value.get("event").and_then(Value::as_str) == Some("fixture.started")
+            && value.get("role").and_then(Value::as_str) == Some("parent")
+            && value.get("pid").and_then(Value::as_u64) == Some(u64::from(root_pid))
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 async fn discover_until_deadline(
