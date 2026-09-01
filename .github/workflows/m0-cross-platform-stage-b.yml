@@ -1,0 +1,103 @@
+name: M0 cross-platform Stage B transport
+
+on:
+  push:
+    branches:
+      - spike/milestone-0-stage-b
+    paths:
+      - .github/workflows/m0-cross-platform-stage-b.yml
+      - experiments/milestone-0/fixtures/stage-b-child.mjs
+      - experiments/milestone-0/src/stage-b-client.mjs
+      - experiments/milestone-0/test/stage-b-runner.integration.test.mjs
+      - experiments/milestone-0/native-runner/src/bin/stage-b-runner.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  stage-b:
+    name: Stage B (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22.16.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.16.0
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Check Node syntax
+        working-directory: experiments/milestone-0
+        run: >-
+          node --check fixtures/stage-b-child.mjs
+          && node --check src/stage-b-client.mjs
+          && node --check test/stage-b-runner.integration.test.mjs
+
+      - name: Run Stage B Rust unit tests
+        run: >-
+          cargo test --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
+
+      - name: Run Rust Clippy
+        run: >-
+          cargo clippy --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+          -- -D warnings
+
+      - name: Build Stage B runner
+        run: >-
+          cargo build --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --bin stage-b-runner
+
+      - name: Configure Stage B paths
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_ENV"
+          const path = require('node:path');
+          const executable = path.resolve(
+            'native-runner',
+            'target',
+            'debug',
+            process.platform === 'win32' ? 'stage-b-runner.exe' : 'stage-b-runner'
+          );
+          console.log(`STAGE_B_RUNNER=${executable}`);
+          console.log(`STAGE_B_SUMMARY=${path.resolve('stage-b-summary.json')}`);
+          NODE
+
+      - name: Run common Stage B integration suite
+        working-directory: experiments/milestone-0
+        run: node --test test/stage-b-runner.integration.test.mjs
+
+      - name: Upload Stage B summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-b-summary-${{ matrix.os }}
+          path: experiments/milestone-0/stage-b-summary.json
+          if-no-files-found: warn
+          retention-days: 14
