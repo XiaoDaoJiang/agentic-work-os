@@ -19,9 +19,7 @@ use crate::hostile_evidence::{
 };
 use crate::windows_process_truth::{WindowsProcessTruth, WindowsTruthVerdict};
 #[cfg(windows)]
-use crate::windows_process_truth::{
-    classify_windows_process_truth, observe_windows_process_truth,
-};
+use crate::windows_process_truth::{classify_windows_process_truth, observe_windows_process_truth};
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
 const FILE_FINGERPRINT_ALGORITHM: &str = "size+fnv1a64";
