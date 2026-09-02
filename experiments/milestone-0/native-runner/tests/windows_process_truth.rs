@@ -27,19 +27,17 @@ fn matching_identity_still_active_and_unsignaled_is_active_original() {
 }
 
 #[test]
-fn matching_identity_signaled_or_exit_code_is_terminated_original() {
-    let mut signaled = base_truth();
-    signaled.wait_state = Win32WaitState::Signaled;
-    signaled.exit_code = Some(0);
-    signaled.processkit_alive = Some(true);
-    signaled.job_member = Some(false);
+fn matching_identity_non_still_active_exit_code_is_terminated_even_before_wait_signals() {
+    let mut exited = base_truth();
+    exited.exit_code = Some(7);
+    exited.wait_state = Win32WaitState::Timeout;
+    exited.processkit_alive = Some(true);
+    exited.job_member = Some(false);
     assert_eq!(
-        classify_windows_process_truth(&signaled),
+        classify_windows_process_truth(&exited),
         WindowsTruthVerdict::TerminatedOriginal
     );
 
-    let mut exited = base_truth();
-    exited.exit_code = Some(7);
     exited.wait_state = Win32WaitState::Signaled;
     assert_eq!(
         classify_windows_process_truth(&exited),
@@ -60,13 +58,13 @@ fn creation_identity_mismatch_is_pid_reuse_even_if_pid_is_live() {
 }
 
 #[test]
-fn missing_process_is_gone_when_open_reports_not_found() {
+fn not_found_is_independent_win32_gone_even_when_other_observers_disagree() {
     let mut truth = base_truth();
     truth.open_state = Win32OpenState::NotFound;
     truth.observed_creation_time = None;
     truth.exit_code = None;
     truth.wait_state = Win32WaitState::Unavailable;
-    truth.processkit_alive = Some(false);
+    truth.processkit_alive = Some(true);
     truth.job_member = Some(false);
     assert_eq!(
         classify_windows_process_truth(&truth),
@@ -75,7 +73,7 @@ fn missing_process_is_gone_when_open_reports_not_found() {
 }
 
 #[test]
-fn permission_or_contradictory_win32_facts_are_inconclusive_fail_closed() {
+fn permission_or_self_contradictory_win32_facts_are_inconclusive_fail_closed() {
     let mut denied = base_truth();
     denied.open_state = Win32OpenState::AccessDenied;
     denied.observed_creation_time = None;
