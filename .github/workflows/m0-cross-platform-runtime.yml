@@ -1,0 +1,135 @@
+name: M0 cross-platform runtime
+
+on:
+  push:
+    branches:
+      - spike/milestone-0-harness
+    paths:
+      - .github/workflows/m0-cross-platform-runtime.yml
+      - docs/pm/55-cross-platform-runtime-decision.md
+      - docs/superpowers/specs/2026-09-01-cross-platform-runtime-design.md
+      - experiments/milestone-0/**
+  pull_request:
+    paths:
+      - .github/workflows/m0-cross-platform-runtime.yml
+      - docs/pm/55-cross-platform-runtime-decision.md
+      - docs/superpowers/specs/2026-09-01-cross-platform-runtime-design.md
+      - experiments/milestone-0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PROCESSKIT_VERSION: "3.3.4"
+
+jobs:
+  foundation:
+    name: Foundation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22.16.0
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.16.0
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Verify pinned processkit dependency
+        working-directory: experiments/milestone-0/native-runner
+        shell: bash
+        run: |
+          expected="processkit = \"=${PROCESSKIT_VERSION}\""
+          grep -F "$expected" Cargo.toml
+
+      - name: Run cross-platform Node contract tests
+        working-directory: experiments/milestone-0
+        run: >-
+          node --test
+          test/manifest.test.mjs
+          test/cli.test.mjs
+          test/repository-marker.test.mjs
+          test/repository-marker-cli.test.mjs
+          test/runner-contract.test.mjs
+          test/runner-client.test.mjs
+          test/workflow-structure.test.mjs
+
+      - name: Check Node module syntax
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readdirSync } = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          for (const directory of ['src', 'fixtures']) {
+            for (const file of readdirSync(directory).filter((name) => name.endsWith('.mjs')).sort()) {
+              const result = spawnSync(process.execPath, ['--check', `${directory}/${file}`], { stdio: 'inherit' });
+              if (result.status !== 0) process.exit(result.status ?? 1);
+            }
+          }
+          NODE
+
+      - name: Validate committed Rust dependency lock
+        shell: bash
+        run: >-
+          cargo metadata --locked
+          --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+          --format-version 1
+          --no-deps
+          > /dev/null
+
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml -- --check
+
+      - name: Run Rust Clippy
+        run: cargo clippy --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build native runner
+        run: cargo build --locked --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+
+      - name: Run native runner doctor through Node harness
+        working-directory: experiments/milestone-0
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            executable="native-runner/target/debug/agentic-native-runner.exe"
+          else
+            executable="native-runner/target/debug/agentic-native-runner"
+          fi
+          node src/cli.mjs runner-doctor --executable "$executable" > doctor.json
+
+      - name: Upload committed Cargo lock
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-runner-lock-${{ matrix.os }}
+          path: experiments/milestone-0/native-runner/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload doctor report
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-runner-doctor-${{ matrix.os }}
+          path: experiments/milestone-0/doctor.json
+          if-no-files-found: error
+          retention-days: 14
