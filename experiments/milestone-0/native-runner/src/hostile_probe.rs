@@ -166,6 +166,8 @@ pub struct WindowsTruthSample {
     pub expected_creation_time: u64,
     pub processkit_alive: bool,
     pub job_member: bool,
+    pub win32_truth_before_processkit: WindowsProcessTruth,
+    pub truth_verdict_before_processkit: WindowsTruthVerdict,
     pub win32_truth: WindowsProcessTruth,
     pub truth_verdict: WindowsTruthVerdict,
 }
@@ -459,9 +461,43 @@ fn verdict_name(verdict: HostileVerdict) -> &'static str {
 }
 
 #[cfg(windows)]
+fn capture_windows_truth_before_processkit(
+    identities: &BTreeMap<u32, IdentityState>,
+    members: &[u32],
+) -> BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)> {
+    let members = members.iter().copied().collect::<BTreeSet<_>>();
+    identities
+        .values()
+        .filter_map(|state| {
+            let IdentityState::Anchored(anchor) = state else {
+                return None;
+            };
+            let job_member = members.contains(&anchor.pid);
+            let truth = observe_windows_process_truth(
+                anchor.pid,
+                Some(anchor.start_time),
+                None,
+                Some(job_member),
+            );
+            let verdict = classify_windows_process_truth(&truth);
+            Some((anchor.pid, (truth, verdict)))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn capture_windows_truth_before_processkit(
+    _identities: &BTreeMap<u32, IdentityState>,
+    _members: &[u32],
+) -> BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)> {
+    BTreeMap::new()
+}
+
+#[cfg(windows)]
 fn record_windows_truth_samples(
     identities: &BTreeMap<u32, IdentityState>,
     members: &[u32],
+    before_processkit: &BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)>,
     liveness: &BTreeMap<u32, bool>,
     observation_sample_index: u32,
     samples: &mut Vec<WindowsTruthSample>,
@@ -472,6 +508,11 @@ fn record_windows_truth_samples(
             continue;
         };
         let Some(processkit_alive) = liveness.get(&anchor.pid).copied() else {
+            continue;
+        };
+        let Some((win32_truth_before_processkit, truth_verdict_before_processkit)) =
+            before_processkit.get(&anchor.pid)
+        else {
             continue;
         };
         let job_member = members.contains(&anchor.pid);
@@ -488,6 +529,8 @@ fn record_windows_truth_samples(
             expected_creation_time: anchor.start_time,
             processkit_alive,
             job_member,
+            win32_truth_before_processkit: win32_truth_before_processkit.clone(),
+            truth_verdict_before_processkit: *truth_verdict_before_processkit,
             win32_truth,
             truth_verdict,
         });
@@ -498,6 +541,7 @@ fn record_windows_truth_samples(
 fn record_windows_truth_samples(
     _identities: &BTreeMap<u32, IdentityState>,
     _members: &[u32],
+    _before_processkit: &BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)>,
     _liveness: &BTreeMap<u32, bool>,
     _observation_sample_index: u32,
     _samples: &mut [WindowsTruthSample],
@@ -913,6 +957,7 @@ async fn observe_window(
         best_effort_discover_control(control_file, fixture_pids, identities, true);
         let current_members = read_members(group, "post-stop members", errors);
         observed_members.extend(current_members.iter().copied());
+        let before_processkit = capture_windows_truth_before_processkit(identities, &current_members);
         let liveness = sample_pid_liveness(
             identities,
             &mut survivor_pids,
@@ -922,6 +967,7 @@ async fn observe_window(
         record_windows_truth_samples(
             identities,
             &current_members,
+            &before_processkit,
             &liveness,
             observation_sample_index,
             &mut windows_truth_samples,
@@ -953,6 +999,8 @@ async fn observe_window(
         strict_finalize_control(control_file, fixture_pids, identities, errors);
     let final_members = read_members(group, "final post-stop members", errors);
     observed_members.extend(final_members.iter().copied());
+    let final_before_processkit =
+        capture_windows_truth_before_processkit(identities, &final_members);
     let final_liveness = sample_pid_liveness(
         identities,
         &mut survivor_pids,
@@ -962,6 +1010,7 @@ async fn observe_window(
     record_windows_truth_samples(
         identities,
         &final_members,
+        &final_before_processkit,
         &final_liveness,
         observation_sample_index,
         &mut windows_truth_samples,
