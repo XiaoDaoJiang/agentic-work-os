@@ -1,0 +1,39 @@
+name: Temporary format Windows diagnostic
+
+on:
+  push:
+    branches:
+      - spike/windows-job-observer-diagnostic
+    paths:
+      - .github/workflows/tmp-format-windows-diagnostic.yml
+      - experiments/milestone-0/native-runner/src/hostile_probe.rs
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out diagnostic branch
+        uses: actions/checkout@v6
+        with:
+          ref: spike/windows-job-observer-diagnostic
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt
+      - name: Format native runner
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+      - name: Commit formatting only
+        shell: bash
+        run: |
+          if git diff --quiet -- experiments/milestone-0/native-runner/src/hostile_probe.rs; then
+            echo "No formatting changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/milestone-0/native-runner/src/hostile_probe.rs
+          git commit -m "style(m0): rustfmt Windows diagnostic"
+          git push origin HEAD:spike/windows-job-observer-diagnostic
