@@ -17,6 +17,11 @@ use tokio::time;
 use crate::hostile_evidence::{
     HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
+use crate::windows_process_truth::{WindowsProcessTruth, WindowsTruthVerdict};
+#[cfg(windows)]
+use crate::windows_process_truth::{
+    classify_windows_process_truth, observe_windows_process_truth,
+};
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
 const FILE_FINGERPRINT_ALGORITHM: &str = "size+fnv1a64";
@@ -157,6 +162,16 @@ impl HostileProbeConfig {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WindowsTruthSample {
+    pub pid: u32,
+    pub expected_creation_time: u64,
+    pub processkit_alive: bool,
+    pub job_member: bool,
+    pub win32_truth: WindowsProcessTruth,
+    pub truth_verdict: WindowsTruthVerdict,
+}
+
+#[derive(Debug, Serialize)]
 pub struct HostileProbeSummary {
     pub schema: &'static str,
     pub scenario_id: String,
@@ -172,6 +187,7 @@ pub struct HostileProbeSummary {
     pub members_after: Vec<u32>,
     pub fixture_pids: Vec<u32>,
     pub survivor_pids: Vec<u32>,
+    pub windows_truth_samples: Vec<WindowsTruthSample>,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
     pub stdout_drained: bool,
@@ -391,6 +407,8 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
 
     let physical_verdict = evaluate_physical_verdict(&evidence);
     let physical_verdict_name = verdict_name(physical_verdict);
+    let windows_truth_samples =
+        collect_windows_truth_samples(&group, &identities, &mut observation_errors);
     let anchors = anchored_identities(&identities);
     let (cleanup_succeeded, cleanup_errors) = cleanup_survivors(
         &observation.survivor_pids,
@@ -416,6 +434,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_after: observation.members_after,
         fixture_pids: fixture_pids.into_iter().collect(),
         survivor_pids: observation.survivor_pids,
+        windows_truth_samples,
         stdout_bytes,
         stderr_bytes,
         stdout_drained,
@@ -439,6 +458,65 @@ fn verdict_name(verdict: HostileVerdict) -> &'static str {
         HostileVerdict::Fail => "FAIL",
         HostileVerdict::Inconclusive => "INCONCLUSIVE",
     }
+}
+
+#[cfg(windows)]
+fn collect_windows_truth_samples(
+    group: &ProcessGroup,
+    identities: &BTreeMap<u32, IdentityState>,
+    errors: &mut Vec<String>,
+) -> Vec<WindowsTruthSample> {
+    let members = match group.members() {
+        Ok(members) => members.into_iter().collect::<BTreeSet<_>>(),
+        Err(error) => {
+            errors.push(format!("windows truth group.members: {error}"));
+            return Vec::new();
+        }
+    };
+
+    identities
+        .values()
+        .filter_map(|state| {
+            let IdentityState::Anchored(anchor) = state else {
+                return None;
+            };
+            let processkit_alive = match process_is_alive(anchor.pid, Some(anchor.start_time)) {
+                Ok(alive) => alive,
+                Err(error) => {
+                    errors.push(format!(
+                        "windows truth process_is_alive({}, {}): {error}",
+                        anchor.pid, anchor.start_time
+                    ));
+                    return None;
+                }
+            };
+            let job_member = members.contains(&anchor.pid);
+            let win32_truth = observe_windows_process_truth(
+                anchor.pid,
+                Some(anchor.start_time),
+                Some(processkit_alive),
+                Some(job_member),
+            );
+            let truth_verdict = classify_windows_process_truth(&win32_truth);
+            Some(WindowsTruthSample {
+                pid: anchor.pid,
+                expected_creation_time: anchor.start_time,
+                processkit_alive,
+                job_member,
+                win32_truth,
+                truth_verdict,
+            })
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn collect_windows_truth_samples(
+    _group: &ProcessGroup,
+    _identities: &BTreeMap<u32, IdentityState>,
+    _errors: &mut Vec<String>,
+) -> Vec<WindowsTruthSample> {
+    Vec::new()
 }
 
 fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
