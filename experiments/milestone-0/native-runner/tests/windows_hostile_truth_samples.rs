@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -113,6 +114,7 @@ fn hostile_probe_reports_parallel_win32_truth_without_rewriting_physical_verdict
         "at least one anchored PID must be diagnosed"
     );
 
+    let mut observation_sample_indices = BTreeSet::new();
     for sample in samples {
         assert!(sample.get("pid").and_then(Value::as_u64).is_some());
         assert!(
@@ -135,7 +137,17 @@ fn hostile_probe_reports_parallel_win32_truth_without_rewriting_physical_verdict
                 .and_then(Value::as_str)
                 .is_some()
         );
+        observation_sample_indices.insert(
+            sample
+                .get("observation_sample_index")
+                .and_then(Value::as_u64)
+                .expect("each Windows truth sample must identify its observation tick"),
+        );
     }
+    assert!(
+        observation_sample_indices.len() >= 2,
+        "Windows truth must be sampled on multiple ticks inside the observation window"
+    );
 
     fs::remove_dir_all(&root).expect("remove disposable root");
 }
