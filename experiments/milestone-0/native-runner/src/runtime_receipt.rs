@@ -71,9 +71,18 @@ pub fn validate_runtime_receipt(receipt: &RuntimeReceiptV0) -> Result<(), String
         ("run_id", receipt.run_id.as_str()),
         ("spawn_nonce", receipt.spawn_nonce.as_str()),
         ("process_identity", receipt.process_identity.as_str()),
-        ("containment.mechanism", receipt.containment.mechanism.as_str()),
-        ("containment.boundary_id", receipt.containment.boundary_id.as_str()),
-        ("workspace.workspace_id", receipt.workspace.workspace_id.as_str()),
+        (
+            "containment.mechanism",
+            receipt.containment.mechanism.as_str(),
+        ),
+        (
+            "containment.boundary_id",
+            receipt.containment.boundary_id.as_str(),
+        ),
+        (
+            "workspace.workspace_id",
+            receipt.workspace.workspace_id.as_str(),
+        ),
         (
             "workspace.repository_identity",
             receipt.workspace.repository_identity.as_str(),
