@@ -52,23 +52,14 @@ Job membership   = false
 
 All 77 correlate one-to-one with the 77 physical FAIL runs and the reported `survivor_pids`.
 
-For all 77 disagreement samples, the independent Win32 verdict captured **before** the ProcessKit liveness call is:
+For all 77 disagreement samples, the independent Win32 verdict captured **before** the ProcessKit liveness call is `TERMINATED_ORIGINAL`:
 
-```text
-TERMINATED_ORIGINAL
-```
-
-There are:
-
-- 77 / 77 `TERMINATED_ORIGINAL` before ProcessKit
+- 77 / 77 `TERMINATED_ORIGINAL`
 - 0 `ACTIVE_ORIGINAL`
 - 0 `REUSED_PID`
 - 0 `INCONCLUSIVE`
 
-After the ProcessKit liveness call:
-
-- 49 remain `TERMINATED_ORIGINAL`
-- 28 have already become `GONE`
+After the ProcessKit liveness call, 49 remain `TERMINATED_ORIGINAL` and 28 have already become `GONE`.
 
 Every disagreement occurred at observation sample index `0`; later ticks observe the processes as gone/not alive.
 
