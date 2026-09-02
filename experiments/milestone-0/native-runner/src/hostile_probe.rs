@@ -161,6 +161,7 @@ impl HostileProbeConfig {
 
 #[derive(Debug, Serialize)]
 pub struct WindowsTruthSample {
+    pub observation_sample_index: u32,
     pub pid: u32,
     pub expected_creation_time: u64,
     pub processkit_alive: bool,
@@ -230,6 +231,7 @@ struct ControlSnapshot {
 struct ObservationOutcome {
     members_after: Vec<u32>,
     survivor_pids: Vec<u32>,
+    windows_truth_samples: Vec<WindowsTruthSample>,
     observed_late_write: bool,
     observer_complete: bool,
     control_parse_complete: bool,
@@ -405,8 +407,6 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
 
     let physical_verdict = evaluate_physical_verdict(&evidence);
     let physical_verdict_name = verdict_name(physical_verdict);
-    let windows_truth_samples =
-        collect_windows_truth_samples(&group, &identities, &mut observation_errors);
     let anchors = anchored_identities(&identities);
     let (cleanup_succeeded, cleanup_errors) = cleanup_survivors(
         &observation.survivor_pids,
@@ -432,7 +432,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_after: observation.members_after,
         fixture_pids: fixture_pids.into_iter().collect(),
         survivor_pids: observation.survivor_pids,
-        windows_truth_samples,
+        windows_truth_samples: observation.windows_truth_samples,
         stdout_bytes,
         stderr_bytes,
         stdout_drained,
@@ -459,62 +459,49 @@ fn verdict_name(verdict: HostileVerdict) -> &'static str {
 }
 
 #[cfg(windows)]
-fn collect_windows_truth_samples(
-    group: &ProcessGroup,
+fn record_windows_truth_samples(
     identities: &BTreeMap<u32, IdentityState>,
-    errors: &mut Vec<String>,
-) -> Vec<WindowsTruthSample> {
-    let members = match group.members() {
-        Ok(members) => members.into_iter().collect::<BTreeSet<_>>(),
-        Err(error) => {
-            errors.push(format!("windows truth group.members: {error}"));
-            return Vec::new();
-        }
-    };
-
-    identities
-        .values()
-        .filter_map(|state| {
-            let IdentityState::Anchored(anchor) = state else {
-                return None;
-            };
-            let processkit_alive = match process_is_alive(anchor.pid, Some(anchor.start_time)) {
-                Ok(alive) => alive,
-                Err(error) => {
-                    errors.push(format!(
-                        "windows truth process_is_alive({}, {}): {error}",
-                        anchor.pid, anchor.start_time
-                    ));
-                    return None;
-                }
-            };
-            let job_member = members.contains(&anchor.pid);
-            let win32_truth = observe_windows_process_truth(
-                anchor.pid,
-                Some(anchor.start_time),
-                Some(processkit_alive),
-                Some(job_member),
-            );
-            let truth_verdict = classify_windows_process_truth(&win32_truth);
-            Some(WindowsTruthSample {
-                pid: anchor.pid,
-                expected_creation_time: anchor.start_time,
-                processkit_alive,
-                job_member,
-                win32_truth,
-                truth_verdict,
-            })
-        })
-        .collect()
+    members: &[u32],
+    liveness: &BTreeMap<u32, bool>,
+    observation_sample_index: u32,
+    samples: &mut Vec<WindowsTruthSample>,
+) {
+    let members = members.iter().copied().collect::<BTreeSet<_>>();
+    for state in identities.values() {
+        let IdentityState::Anchored(anchor) = state else {
+            continue;
+        };
+        let Some(processkit_alive) = liveness.get(&anchor.pid).copied() else {
+            continue;
+        };
+        let job_member = members.contains(&anchor.pid);
+        let win32_truth = observe_windows_process_truth(
+            anchor.pid,
+            Some(anchor.start_time),
+            Some(processkit_alive),
+            Some(job_member),
+        );
+        let truth_verdict = classify_windows_process_truth(&win32_truth);
+        samples.push(WindowsTruthSample {
+            observation_sample_index,
+            pid: anchor.pid,
+            expected_creation_time: anchor.start_time,
+            processkit_alive,
+            job_member,
+            win32_truth,
+            truth_verdict,
+        });
+    }
 }
 
 #[cfg(not(windows))]
-fn collect_windows_truth_samples(
-    _group: &ProcessGroup,
+fn record_windows_truth_samples(
     _identities: &BTreeMap<u32, IdentityState>,
-    _errors: &mut Vec<String>,
-) -> Vec<WindowsTruthSample> {
-    Vec::new()
+    _members: &[u32],
+    _liveness: &BTreeMap<u32, bool>,
+    _observation_sample_index: u32,
+    _samples: &mut [WindowsTruthSample],
+) {
 }
 
 fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
@@ -916,19 +903,30 @@ async fn observe_window(
     let deadline = Instant::now() + duration;
     let mut observed_members = BTreeSet::new();
     let mut survivor_pids = BTreeSet::new();
+    let mut windows_truth_samples = Vec::new();
+    let mut observation_sample_index = 0_u32;
     let mut observed_late_write = false;
     let mut liveness_complete = true;
     let mut fingerprint_complete = true;
 
     loop {
         best_effort_discover_control(control_file, fixture_pids, identities, true);
-        observed_members.extend(read_members(group, "post-stop members", errors));
-        sample_pid_liveness(
+        let current_members = read_members(group, "post-stop members", errors);
+        observed_members.extend(current_members.iter().copied());
+        let liveness = sample_pid_liveness(
             identities,
             &mut survivor_pids,
             errors,
             &mut liveness_complete,
         );
+        record_windows_truth_samples(
+            identities,
+            &current_members,
+            &liveness,
+            observation_sample_index,
+            &mut windows_truth_samples,
+        );
+        observation_sample_index = observation_sample_index.saturating_add(1);
         compare_file_fingerprint(
             control_file,
             baseline_control,
@@ -953,17 +951,27 @@ async fn observe_window(
 
     let control_parse_complete =
         strict_finalize_control(control_file, fixture_pids, identities, errors);
-    sample_pid_liveness(
+    let final_members = read_members(group, "final post-stop members", errors);
+    observed_members.extend(final_members.iter().copied());
+    let final_liveness = sample_pid_liveness(
         identities,
         &mut survivor_pids,
         errors,
         &mut liveness_complete,
+    );
+    record_windows_truth_samples(
+        identities,
+        &final_members,
+        &final_liveness,
+        observation_sample_index,
+        &mut windows_truth_samples,
     );
     let identity_complete = fixture_pids.iter().all(|pid| identities.contains_key(pid));
 
     ObservationOutcome {
         members_after: observed_members.into_iter().collect(),
         survivor_pids: survivor_pids.into_iter().collect(),
+        windows_truth_samples,
         observed_late_write,
         observer_complete: control_parse_complete
             && identity_complete
@@ -978,7 +986,8 @@ fn sample_pid_liveness(
     survivors: &mut BTreeSet<u32>,
     errors: &mut Vec<String>,
     complete: &mut bool,
-) {
+) -> BTreeMap<u32, bool> {
+    let mut observations = BTreeMap::new();
     for state in identities.values() {
         let IdentityState::Anchored(anchor) = state else {
             continue;
@@ -986,8 +995,11 @@ fn sample_pid_liveness(
         match process_is_alive(anchor.pid, Some(anchor.start_time)) {
             Ok(true) => {
                 survivors.insert(anchor.pid);
+                observations.insert(anchor.pid, true);
             }
-            Ok(false) => {}
+            Ok(false) => {
+                observations.insert(anchor.pid, false);
+            }
             Err(error) => {
                 errors.push(format!(
                     "process_is_alive({}, {}): {error}",
@@ -997,6 +1009,7 @@ fn sample_pid_liveness(
             }
         }
     }
+    observations
 }
 
 fn compare_file_fingerprint(
