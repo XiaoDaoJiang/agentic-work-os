@@ -130,6 +130,17 @@ fn hostile_probe_reports_parallel_win32_truth_without_rewriting_physical_verdict
                 .is_some()
         );
         assert!(sample.get("job_member").and_then(Value::as_bool).is_some());
+        assert!(
+            sample.get("win32_truth_before_processkit").is_some(),
+            "each tick must capture independent Win32 truth before ProcessKit liveness"
+        );
+        assert!(
+            sample
+                .get("truth_verdict_before_processkit")
+                .and_then(Value::as_str)
+                .is_some(),
+            "each pre-ProcessKit Win32 observation must be classified"
+        );
         assert!(sample.get("win32_truth").is_some());
         assert!(
             sample
