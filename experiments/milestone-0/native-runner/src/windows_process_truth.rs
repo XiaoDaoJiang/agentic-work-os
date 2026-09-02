@@ -44,12 +44,10 @@ pub enum WindowsTruthVerdict {
 
 pub fn classify_windows_process_truth(truth: &WindowsProcessTruth) -> WindowsTruthVerdict {
     match truth.open_state {
-        Win32OpenState::NotFound => {
-            if truth.processkit_alive == Some(true) || truth.job_member == Some(true) {
-                return WindowsTruthVerdict::Inconclusive;
-            }
-            return WindowsTruthVerdict::Gone;
-        }
+        // This verdict is intentionally Win32-only. ProcessKit liveness and Job
+        // membership remain correlation fields on `WindowsProcessTruth`, but an
+        // external disagreement must not rewrite an independent Win32 fact.
+        Win32OpenState::NotFound => return WindowsTruthVerdict::Gone,
         Win32OpenState::AccessDenied | Win32OpenState::Failed => {
             return WindowsTruthVerdict::Inconclusive;
         }
@@ -66,12 +64,17 @@ pub fn classify_windows_process_truth(truth: &WindowsProcessTruth) -> WindowsTru
         return WindowsTruthVerdict::ReusedPid;
     }
 
-    match (truth.exit_code, truth.wait_state) {
-        (Some(STILL_ACTIVE_EXIT_CODE), Win32WaitState::Timeout) => {
-            WindowsTruthVerdict::ActiveOriginal
-        }
-        (Some(exit_code), Win32WaitState::Signaled) if exit_code != STILL_ACTIVE_EXIT_CODE => {
+    // GetExitCodeProcess is the primary Win32 execution-state oracle: Microsoft
+    // documents STILL_ACTIVE for a process that has not terminated and a final
+    // exit code after termination. WaitForSingleObject is retained as a
+    // corroborating fact; during the narrow termination sequence the exit code can
+    // already be final before the process object becomes signaled.
+    match truth.exit_code {
+        Some(exit_code) if exit_code != STILL_ACTIVE_EXIT_CODE => {
             WindowsTruthVerdict::TerminatedOriginal
+        }
+        Some(STILL_ACTIVE_EXIT_CODE) if truth.wait_state == Win32WaitState::Timeout => {
+            WindowsTruthVerdict::ActiveOriginal
         }
         _ => WindowsTruthVerdict::Inconclusive,
     }
