@@ -15,7 +15,7 @@ This record closes the diagnostic question in Issue #14. It does **not** rewrite
 
 ## Fresh synchronized diagnostic evidence
 
-Candidate head: `55dc3a0cc65095e276a47bd98d637f4a33509fe6`
+Evidence-producing head: `55dc3a0cc65095e276a47bd98d637f4a33509fe6`
 
 Fresh runs:
 
