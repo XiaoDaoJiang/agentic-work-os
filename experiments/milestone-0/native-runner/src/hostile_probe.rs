@@ -17,6 +17,9 @@ use tokio::time;
 use crate::hostile_evidence::{
     HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
+use crate::windows_observer::{
+    WindowsObserverSample, WindowsObserverSummary, reduce_windows_observer_samples,
+};
 use crate::windows_process_truth::{WindowsProcessTruth, WindowsTruthVerdict};
 #[cfg(windows)]
 use crate::windows_process_truth::{classify_windows_process_truth, observe_windows_process_truth};
@@ -188,6 +191,9 @@ pub struct HostileProbeSummary {
     pub members_after: Vec<u32>,
     pub fixture_pids: Vec<u32>,
     pub survivor_pids: Vec<u32>,
+    pub executing_survivor_pids: Vec<u32>,
+    pub observer_mismatch_pids: Vec<u32>,
+    pub observer_inconclusive_pids: Vec<u32>,
     pub windows_truth_samples: Vec<WindowsTruthSample>,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
@@ -366,7 +372,12 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         &mut observation_errors,
     )
     .await;
-    let observer_complete = fingerprint_ready && observation.observer_complete;
+    let windows_observer_summary = summarize_windows_observer(&observation.windows_truth_samples);
+    let observer_complete = fingerprint_ready
+        && observation.observer_complete
+        && windows_observer_is_complete(&observation.survivor_pids, &windows_observer_summary);
+    let physical_survivor_pids =
+        prospective_physical_survivor_pids(&observation.survivor_pids, &windows_observer_summary);
     let control_parse_complete = observation.control_parse_complete;
     let teardown_error = if teardown_errors.is_empty() {
         None
@@ -386,7 +397,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_before: members_before.clone(),
         members_after: observation.members_after.clone(),
         fixture_pids: fixture_pids.iter().copied().collect(),
-        survivor_pids: observation.survivor_pids.clone(),
+        survivor_pids: physical_survivor_pids,
         stdout_bytes,
         stderr_bytes,
         stdout_drained,
@@ -422,6 +433,9 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_after: observation.members_after,
         fixture_pids: fixture_pids.into_iter().collect(),
         survivor_pids: observation.survivor_pids,
+        executing_survivor_pids: windows_observer_summary.executing_survivor_pids,
+        observer_mismatch_pids: windows_observer_summary.observer_mismatch_pids,
+        observer_inconclusive_pids: windows_observer_summary.inconclusive_pids,
         windows_truth_samples: observation.windows_truth_samples,
         stdout_bytes,
         stderr_bytes,
@@ -438,6 +452,57 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         observation_errors,
         cleanup_errors,
     })
+}
+
+fn summarize_windows_observer(samples: &[WindowsTruthSample]) -> WindowsObserverSummary {
+    let samples = samples
+        .iter()
+        .map(|sample| WindowsObserverSample {
+            pid: sample.pid,
+            processkit_alive: sample.processkit_alive,
+            job_member: sample.job_member,
+            win32_truth: sample.truth_verdict_before_processkit,
+        })
+        .collect::<Vec<_>>();
+    reduce_windows_observer_samples(&samples)
+}
+
+#[cfg(windows)]
+fn windows_observer_is_complete(
+    raw_survivor_pids: &[u32],
+    summary: &WindowsObserverSummary,
+) -> bool {
+    if !summary.inconclusive_pids.is_empty() {
+        return false;
+    }
+    raw_survivor_pids.iter().all(|pid| {
+        summary.executing_survivor_pids.contains(pid)
+            || summary.observer_mismatch_pids.contains(pid)
+    })
+}
+
+#[cfg(not(windows))]
+fn windows_observer_is_complete(
+    _raw_survivor_pids: &[u32],
+    _summary: &WindowsObserverSummary,
+) -> bool {
+    true
+}
+
+#[cfg(windows)]
+fn prospective_physical_survivor_pids(
+    _raw_survivor_pids: &[u32],
+    summary: &WindowsObserverSummary,
+) -> Vec<u32> {
+    summary.executing_survivor_pids.clone()
+}
+
+#[cfg(not(windows))]
+fn prospective_physical_survivor_pids(
+    raw_survivor_pids: &[u32],
+    _summary: &WindowsObserverSummary,
+) -> Vec<u32> {
+    raw_survivor_pids.to_vec()
 }
 
 fn verdict_name(verdict: HostileVerdict) -> &'static str {
