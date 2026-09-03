@@ -2,7 +2,7 @@ use agentic_native_runner::runtime_receipt::{
     ContainmentReceipt, RuntimeReceiptV0, WorkspaceReceipt,
 };
 use agentic_native_runner::runtime_receipt_publication::{
-    PublishDisposition, PublishError, ReceiptPublicationState, publish_runtime_receipt,
+    PublishDisposition, PublishErrorKind, ReceiptPublicationState, publish_runtime_receipt,
 };
 
 fn sample_receipt() -> RuntimeReceiptV0 {
@@ -78,7 +78,7 @@ fn conflicting_duplicate_publication_fails_closed_and_preserves_original() {
 
     let error = publish_runtime_receipt(state, &conflicting)
         .expect_err("conflicting receipt bytes must fail closed");
-    assert_eq!(error, PublishError::ConflictingPublication);
+    assert_eq!(error.kind(), PublishErrorKind::ConflictingPublication);
     assert_eq!(error.preserved_state(), &frozen);
 }
 
@@ -94,6 +94,6 @@ fn same_run_with_different_spawn_nonce_is_conflicting_not_a_second_receipt() {
 
     let error = publish_runtime_receipt(state, &second_spawn)
         .expect_err("one publication slot cannot accept a second spawn receipt");
-    assert_eq!(error, PublishError::ConflictingPublication);
+    assert_eq!(error.kind(), PublishErrorKind::ConflictingPublication);
     assert_eq!(error.preserved_state(), &frozen);
 }
