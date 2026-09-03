@@ -94,7 +94,7 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 - Issue #11 `VAL-02`：招募 P01..P03，执行 5 个外部真实问题、A↔B / B↔C、14 天无提醒 reuse audit。
 - Issue #37 `VAL-01A`：对 TR-03/TR-04/TR-06/TR-07/TR-08 等进行 **prospective real-work capture**，不再用弱历史 near-match 凑数。
 - Issue #38 `VAL-02A`：寻找一名真实外部 P01 候选，但不降低 qualification / consent 标准。
-- Issue #24：Founder P00 research-kit rehearsal，只能验证研究材料；贡献 0 external / reuse / Gate evidence。
+- Issue #24：**已关闭**；Founder P00 仅完成 structural research-kit rehearsal，未收集独立 live behavior，贡献 0 external / reuse / Gate evidence。
 
 ### 证据纪律
 
