@@ -56,7 +56,9 @@ async fn own_04_duplicate_cancel_causes_exactly_one_real_process_group_teardown(
     let (after_first, first) = apply_cancel_request(initial);
     if first == CancelApply::FirstAccepted {
         teardown_calls += 1;
-        group.kill_all().expect("first Cancel must tear down boundary");
+        group
+            .kill_all()
+            .expect("first Cancel must tear down boundary");
     }
 
     let (after_second, second) = apply_cancel_request(after_first.clone());
@@ -69,8 +71,14 @@ async fn own_04_duplicate_cancel_causes_exactly_one_real_process_group_teardown(
 
     assert_eq!(first, CancelApply::FirstAccepted);
     assert_eq!(second, CancelApply::DuplicateIdempotent);
-    assert_eq!(teardown_calls, 1, "duplicate Cancel must not call kill_all twice");
-    assert_eq!(after_second.receipt_fingerprint, after_first.receipt_fingerprint);
+    assert_eq!(
+        teardown_calls, 1,
+        "duplicate Cancel must not call kill_all twice"
+    );
+    assert_eq!(
+        after_second.receipt_fingerprint,
+        after_first.receipt_fingerprint
+    );
     assert_eq!(after_second.boundary_id, after_first.boundary_id);
     assert!(after_second.teardown_requested);
     assert!(!after_second.terminal_transition_committed);
