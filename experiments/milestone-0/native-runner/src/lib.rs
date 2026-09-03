@@ -4,6 +4,7 @@ pub mod hostile_evidence;
 #[cfg_attr(not(windows), allow(clippy::ptr_arg))]
 pub mod hostile_probe;
 pub mod protocol;
+pub mod runtime_failure_ledger;
 pub mod runtime_receipt;
 pub mod runtime_receipt_publication;
 pub mod runtime_reconciliation;
