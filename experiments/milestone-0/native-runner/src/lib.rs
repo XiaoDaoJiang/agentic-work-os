@@ -5,6 +5,7 @@ pub mod hostile_evidence;
 pub mod hostile_probe;
 pub mod protocol;
 pub mod runtime_receipt;
+pub mod runtime_receipt_publication;
 pub mod runtime_reconciliation;
 pub mod windows_observer;
 pub mod windows_process_truth;
