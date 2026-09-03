@@ -1,7 +1,7 @@
 # Agentic Work OS — Gate Execution Index
 
 > 状态：Active governance index  
-> 日期：2026-09-01  
+> 日期：2026-09-03  
 > 需求基线：[MVP PRD](./20-mvp-prd.md)、[PRD Red Team](./30-prd-red-team.md)  
 > 执行协议：[Validation Protocol](./40-validation-protocol.md)、[Milestone 0 Experiment Plan](./50-milestone-0-experiment-plan.md)
 
@@ -15,7 +15,7 @@
 
 | 轨道 / 门槛 | 当前执行状态 | 最终 verdict | 后果 |
 |---|---|---|---|
-| Product Validation | **IN_PROGRESS**：执行分支 `validation/concierge-execution` 已有真实证据快照；9/9 first-nine fit 已完成，trajectory 与外部 Concierge 仍阻塞 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
+| Product Validation | **IN_PROGRESS**：9/9 first-nine fit 已完成；首条真实 adverse trajectory TR-09 已验证；其余 trajectory 与外部 Concierge 仍阻塞 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
 | Technical Validation | **IN_PROGRESS / independent**：`spike/milestone-0-harness` 持续执行；Technical Gate 尚未 Final | `NOT_RECORDED` | 不能授权产品 MVP WWA |
 | Product + Technical Gate | `BLOCKED`：等待两个独立 Gate Final、必要 PRD 修订闭环及联合 Decision Record | `NOT_EVALUATED` | WWA、实施计划和生产 Schema/API 冻结保持 No-Go |
 | Product MVP WWA | `BLOCKED` | 不适用 | 不得创建 `docs/pm/70-mvp-wwa-backlog.md` |
@@ -39,14 +39,46 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 - Nine Real Instances：9 / 9 frozen；
 - neutral mapping：9 / 9；
 - first-pass fit：9 / 9 `natural_fit` for known facts；
-- first-nine `strained_fit = 0`、`model_break = 0`；
-- giant Task / special FK / ambiguous ownership / exception lifecycle：0 / 0 / 0 / 0；
-- strict distinct actual trajectory：0 / required 6；
+- supplemental adverse instance：1；
+- total `natural_fit = 10`、`strained_fit = 0`、`model_break = 0`；
+- first-nine giant Task / special FK / ambiguous ownership / exception lifecycle：0 / 0 / 0 / 0；
+- strict distinct actual trajectory：**1 / required 6**；
+- actual trajectory IDs：`TR-09`；
 - Founder signal：`STRONG_SIGNAL_SUPPORTING_ONLY`；
 - external participants：0 / 3；
 - external real problems：0 / 5；
 - independent qualifying reuse users：0 / 2；
 - Product Validation Gate Final：`NOT_RECORDED`。
+
+### 首条真实 adverse trajectory：TR-09
+
+Supplemental evidence：
+
+`evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/domain-walkthrough/S01-ORBIS-PLAN40B-DELIVERY-INTEGRITY.yaml`
+
+真实事实链：
+
+1. Orbis PR #16 的 Plan 40B change package 已完成 RED/GREEN、artifact、Trusted Preview，并被 merge；
+2. #16 merge 时仍指向 stacked base，因此 intended target `main` 并未收到 Plan 40B commits；
+3. 历史 #16 `merged/accepted` 事实保持不变，没有被回写成 Reject/failed；
+4. #18 使用相同 validated head 对 `main` 做 fresh build/artifact/Preview，但因 GitHub connector Ready-for-review schema incompatibility 保持 Draft；
+5. #19 作为新的 non-Draft delivery attempt 携带同一 validated head，最终 merge 到 `main`。
+
+因此当前支持的领域不变量是：
+
+> historical acceptance / Review fact 与 delivery integrity 必须分离；后续交付失败不能重写历史决定。
+
+S01 在该边界下为 `natural_fit`。
+
+### 未计入的 near-match
+
+Issue #23 的 GitHub Actions infra incident 确实在 runner allocation / checkout 前失败，并在 private→public 后恢复，但这是 GitHub-hosted remote runner，不是当前 MVP 的 local Workspace。它不能用来替代本地 TR-06 证据，因此 **不计入 1/6**。
+
+同样：
+
+- Orbis PR #4 的 supersession/abandonment 不等于 Review Reject 或 Agent Cancel；
+- `sooperset/mcp-atlassian#1404` 按作者请求关闭，不等于 Review Reject；
+- `easy-yapi` upstream sync 只有目标 fork 被修改，不足以证明 TR-08 跨仓库 ownership。
 
 ### 独立 Decision Record
 
@@ -54,13 +86,14 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 |---|---|---|
 | Project-native | `Keep / Modify / Remove` | `NOT_RECORDED` |
 | Task-first | `Keep / Modify / Remove` | `NOT_RECORDED` |
-| Task Aggregation | `Keep / Modify / Remove` | **Draft `CONTINUE_VALIDATION`**：9/9 known-fact natural fit，但 trajectory 0/6 |
+| Task Aggregation | `Keep / Modify / Remove` | **Draft `CONTINUE_VALIDATION`**：9/9 frozen known-fact natural fit + TR-09 actual；trajectory 1/6 |
 | Product Validation Gate | `PASS / CONTINUE_VALIDATION / FAIL_AND_REVISE` | **Draft `CONTINUE_VALIDATION`；Final `NOT_RECORDED`** |
 
 ### Active Product Validation work
 
-- Issue #9 `VAL-01`：补至少 6 条不同真实 `actual_end_to_end` trajectory，并 Finalize Task Aggregation。
+- Issue #9 `VAL-01`：还需至少 5 条不同真实 `actual_end_to_end` trajectory，并 Finalize Task Aggregation。
 - Issue #11 `VAL-02`：招募 P01..P03，执行 5 个外部真实问题、A↔B / B↔C、14 天无提醒 reuse audit。
+- Issue #24 `VAL-R0`：Founder rehearsal / research-kit readiness；严格 0 Gate contribution。
 
 ### 证据纪律
 
@@ -69,6 +102,7 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 - 失败、Cancel、Reject、Supersede 不能因结果不利而从样本删除。
 - Counterfactual 不计入 6 条 actual trajectory。
 - Technical Validation fault injection 默认不得回填 Product Validation。
+- 超出 MVP execution environment 的 near-match 不为凑数跨边界计入。
 - Founder 不计 external participant / qualifying reuse。
 
 ## 4. Technical Validation 执行线
@@ -128,7 +162,7 @@ wwa_unlocked =
 
 当前 Product Validation 下一次合法变化仅包括：
 
-- `actual_end_to_end` trajectory 从 0 增加到有真实证据支持的计数；
+- `actual_end_to_end` trajectory 从 1 增加到有真实证据支持的更高计数；
 - P01..P03 由真实 Qualification 产生；
 - 外部真实问题与 A/B/C observation 被记录；
 - qualifying reuse 经双评审通过；
