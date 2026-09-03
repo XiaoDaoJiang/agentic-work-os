@@ -65,3 +65,72 @@ pub fn apply_cancel_request(mut state: CancelState) -> (CancelState, CancelApply
     state.teardown_requested = true;
     (state, CancelApply::FirstAccepted)
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StartupProcessTruth {
+    ActiveOriginal,
+    GoneOriginal,
+    ReusedPid,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StartupReconciliationFacts {
+    pub receipt_fingerprint: String,
+    pub process_truth: StartupProcessTruth,
+    pub boundary_empty: Option<bool>,
+    pub stdout_drained: bool,
+    pub stderr_drained: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StartupDisposition {
+    ReconciliationRequired,
+    InterruptedReconciled,
+    ReusedPidDetected,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ResourceLock {
+    Held,
+    Releasable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StartupReconciliationDecision {
+    pub receipt_fingerprint: String,
+    pub disposition: StartupDisposition,
+    pub resource_lock: ResourceLock,
+    pub auto_adopt: bool,
+    pub kill_observed_pid: bool,
+}
+
+pub fn reconcile_startup(facts: &StartupReconciliationFacts) -> StartupReconciliationDecision {
+    let safely_gone = facts.process_truth == StartupProcessTruth::GoneOriginal
+        && facts.boundary_empty == Some(true)
+        && facts.stdout_drained
+        && facts.stderr_drained;
+
+    let (disposition, resource_lock) = match facts.process_truth {
+        StartupProcessTruth::ReusedPid => (StartupDisposition::ReusedPidDetected, ResourceLock::Held),
+        StartupProcessTruth::GoneOriginal if safely_gone => {
+            (StartupDisposition::InterruptedReconciled, ResourceLock::Releasable)
+        }
+        StartupProcessTruth::ActiveOriginal
+        | StartupProcessTruth::GoneOriginal
+        | StartupProcessTruth::Unknown => {
+            (StartupDisposition::ReconciliationRequired, ResourceLock::Held)
+        }
+    };
+
+    StartupReconciliationDecision {
+        receipt_fingerprint: facts.receipt_fingerprint.clone(),
+        disposition,
+        resource_lock,
+        auto_adopt: false,
+        kill_observed_pid: false,
+    }
+}
