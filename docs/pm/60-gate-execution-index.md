@@ -15,7 +15,7 @@
 
 | 轨道 / 门槛 | 当前执行状态 | 最终 verdict | 后果 |
 |---|---|---|---|
-| Product Validation | **IN_PROGRESS**：9/9 first-nine fit 已完成；首条真实 adverse trajectory TR-09 已验证；其余 trajectory 与外部 Concierge 仍阻塞 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
+| Product Validation | **IN_PROGRESS**：执行分支 `validation/concierge-execution`；9/9 frozen first-nine fit 完成，首条 adverse trajectory `TR-09` 已成立，当前 1/6；外部 Concierge 尚未开始 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
 | Technical Validation | **IN_PROGRESS / independent**：`spike/milestone-0-harness` 持续执行；Technical Gate 尚未 Final | `NOT_RECORDED` | 不能授权产品 MVP WWA |
 | Product + Technical Gate | `BLOCKED`：等待两个独立 Gate Final、必要 PRD 修订闭环及联合 Decision Record | `NOT_EVALUATED` | WWA、实施计划和生产 Schema/API 冻结保持 No-Go |
 | Product MVP WWA | `BLOCKED` | 不适用 | 不得创建 `docs/pm/70-mvp-wwa-backlog.md` |
@@ -38,9 +38,9 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 
 - Nine Real Instances：9 / 9 frozen；
 - neutral mapping：9 / 9；
-- first-pass fit：9 / 9 `natural_fit` for known facts；
-- supplemental adverse instance：1；
-- total `natural_fit = 10`、`strained_fit = 0`、`model_break = 0`；
+- frozen first-nine fit：9 / 9 `natural_fit` for known facts；
+- supplemental adverse instances：1；
+- total fit：`natural_fit = 10`、`strained_fit = 0`、`model_break = 0`；
 - first-nine giant Task / special FK / ambiguous ownership / exception lifecycle：0 / 0 / 0 / 0；
 - strict distinct actual trajectory：**1 / required 6**；
 - actual trajectory IDs：`TR-09`；
@@ -50,35 +50,34 @@ Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 - independent qualifying reuse users：0 / 2；
 - Product Validation Gate Final：`NOT_RECORDED`。
 
-### 首条真实 adverse trajectory：TR-09
+### 已成立的 adverse trajectory
 
-Supplemental evidence：
+`TR-09`：Orbis Plan 40B delivery-integrity failure/recovery。
+
+核心事实：PR #16 已验证且记录 merge，但因仍指向 stacked base，目标 `main` 没有收到 Plan 40B；后续 #18/#19 使用相同 validated head 重新建立 main-targeted delivery，最终 #19 merge。历史 acceptance 不被重写，只单独表达 `delivery_integrity: failed → restored`。
+
+证据：
 
 `evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/domain-walkthrough/S01-ORBIS-PLAN40B-DELIVERY-INTEGRITY.yaml`
 
-真实事实链：
+### 历史搜索截止
 
-1. Orbis PR #16 的 Plan 40B change package 已完成 RED/GREEN、artifact、Trusted Preview，并被 merge；
-2. #16 merge 时仍指向 stacked base，因此 intended target `main` 并未收到 Plan 40B commits；
-3. 历史 #16 `merged/accepted` 事实保持不变，没有被回写成 Reject/failed；
-4. #18 使用相同 validated head 对 `main` 做 fresh build/artifact/Preview，但因 GitHub connector Ready-for-review schema incompatibility 保持 Draft；
-5. #19 作为新的 non-Draft delivery attempt 携带同一 validated head，最终 merge 到 `main`。
+已保存：
 
-因此当前支持的领域不变量是：
+`evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/domain-walkthrough/trajectory-gap-audit-2026-09-03.md`
 
-> historical acceptance / Review fact 与 delivery integrity 必须分离；后续交付失败不能重写历史决定。
+截至 2026-09-03，当前可访问历史资料已无法诚实补出第二条完整 `actual_end_to_end` trajectory。已审计并明确排除：
 
-S01 在该边界下为 `natural_fit`。
+- Orbis PR #4：supersede/abandonment ≠ Review Reject / Agent Cancel；
+- `sooperset/mcp-atlassian#1404`：author-requested close ≠ Review Reject；
+- GitHub Actions Issue #23：真实 pre-checkout zero-step failure，但属于 remote hosted runner，不满足当前 local-runner/local-Workspace TR-06；
+- `easy-yapi` upstream sync：存在两个 repository reference，但实际 change/delivery 只归属 fork，不满足 TR-08；
+- Hermes/Desktop cwd 历史：缺少绑定具体真实代码任务、错误 Workspace 与成功 retry 的完整 raw chain；
+- `learn-claude-code` default-branch commits：无法建立用户归属 + no-Task start 两项必要事实；
+- user-authored `review:changes_requested` PR 搜索：无 qualifying TR-03 历史案例；
+- Technical Validation hostile/fault-injection：默认不回填 Product real-work evidence。
 
-### 未计入的 near-match
-
-Issue #23 的 GitHub Actions infra incident 确实在 runner allocation / checkout 前失败，并在 private→public 后恢复，但这是 GitHub-hosted remote runner，不是当前 MVP 的 local Workspace。它不能用来替代本地 TR-06 证据，因此 **不计入 1/6**。
-
-同样：
-
-- Orbis PR #4 的 supersession/abandonment 不等于 Review Reject 或 Agent Cancel；
-- `sooperset/mcp-atlassian#1404` 按作者请求关闭，不等于 Review Reject；
-- `easy-yapi` upstream sync 只有目标 fork 被修改，不足以证明 TR-08 跨仓库 ownership。
+因此历史 broad search 视为对当前资料 **saturated**。后续计数增长必须来自新发现的完整历史 raw source，或自然发生并 prospectively capture 的 founder/external real code work。
 
 ### 独立 Decision Record
 
@@ -86,14 +85,16 @@ Issue #23 的 GitHub Actions infra incident 确实在 runner allocation / checko
 |---|---|---|
 | Project-native | `Keep / Modify / Remove` | `NOT_RECORDED` |
 | Task-first | `Keep / Modify / Remove` | `NOT_RECORDED` |
-| Task Aggregation | `Keep / Modify / Remove` | **Draft `CONTINUE_VALIDATION`**：9/9 frozen known-fact natural fit + TR-09 actual；trajectory 1/6 |
+| Task Aggregation | `Keep / Modify / Remove` | **Draft `CONTINUE_VALIDATION`**：9/9 frozen first-nine natural + S01 TR-09；trajectory 1/6 |
 | Product Validation Gate | `PASS / CONTINUE_VALIDATION / FAIL_AND_REVISE` | **Draft `CONTINUE_VALIDATION`；Final `NOT_RECORDED`** |
 
 ### Active Product Validation work
 
-- Issue #9 `VAL-01`：还需至少 5 条不同真实 `actual_end_to_end` trajectory，并 Finalize Task Aggregation。
+- Issue #9 `VAL-01`：再补 5 个不同的真实 `actual_end_to_end` trajectory，并 Finalize Task Aggregation。
 - Issue #11 `VAL-02`：招募 P01..P03，执行 5 个外部真实问题、A↔B / B↔C、14 天无提醒 reuse audit。
-- Issue #24 `VAL-R0`：Founder rehearsal / research-kit readiness；严格 0 Gate contribution。
+- Issue #37 `VAL-01A`：对 TR-03/TR-04/TR-06/TR-07/TR-08 等进行 **prospective real-work capture**，不再用弱历史 near-match 凑数。
+- Issue #38 `VAL-02A`：寻找一名真实外部 P01 候选，但不降低 qualification / consent 标准。
+- Issue #24：Founder P00 research-kit rehearsal，只能验证研究材料；贡献 0 external / reuse / Gate evidence。
 
 ### 证据纪律
 
@@ -102,8 +103,9 @@ Issue #23 的 GitHub Actions infra incident 确实在 runner allocation / checko
 - 失败、Cancel、Reject、Supersede 不能因结果不利而从样本删除。
 - Counterfactual 不计入 6 条 actual trajectory。
 - Technical Validation fault injection 默认不得回填 Product Validation。
-- 超出 MVP execution environment 的 near-match 不为凑数跨边界计入。
 - Founder 不计 external participant / qualifying reuse。
+- Historical acceptance / Review fact 与 delivery integrity 分离；后续 delivery failure 不回写历史决定。
+- 历史搜索达到截止后，不因 Gate 压力重新解释已排除 near-match。
 
 ## 4. Technical Validation 执行线
 
@@ -162,7 +164,7 @@ wwa_unlocked =
 
 当前 Product Validation 下一次合法变化仅包括：
 
-- `actual_end_to_end` trajectory 从 1 增加到有真实证据支持的更高计数；
+- `actual_end_to_end` trajectory 从 1 增加到有新真实证据支持的计数；
 - P01..P03 由真实 Qualification 产生；
 - 外部真实问题与 A/B/C observation 被记录；
 - qualifying reuse 经双评审通过；
