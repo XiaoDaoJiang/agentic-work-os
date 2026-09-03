@@ -17,6 +17,7 @@ use tokio::time;
 use crate::hostile_evidence::{
     HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
+use crate::runtime_receipt::OwnershipMarkers;
 use crate::windows_observer::{
     WindowsObserverSample, WindowsObserverSummary, reduce_windows_observer_samples,
 };
@@ -68,6 +69,7 @@ pub struct HostileProbeConfig {
     pub sample_ms: u64,
     pub seed: u32,
     pub repetition: u32,
+    pub ownership_markers: Option<OwnershipMarkers>,
 }
 
 impl HostileProbeConfig {
@@ -101,6 +103,52 @@ impl HostileProbeConfig {
         let sample_ms = required_u64(&mut values, "sample-ms")?;
         let seed = required_u32(&mut values, "seed")?;
         let repetition = required_u32(&mut values, "repetition")?;
+        let runtime_instance_id = values
+            .remove("runtime-instance-id")
+            .map(|value| {
+                value
+                    .into_string()
+                    .map_err(|_| "--runtime-instance-id must be UTF-8".to_owned())
+            })
+            .transpose()?;
+        let run_id = values
+            .remove("run-id")
+            .map(|value| {
+                value
+                    .into_string()
+                    .map_err(|_| "--run-id must be UTF-8".to_owned())
+            })
+            .transpose()?;
+        let spawn_nonce = values
+            .remove("spawn-nonce")
+            .map(|value| {
+                value
+                    .into_string()
+                    .map_err(|_| "--spawn-nonce must be UTF-8".to_owned())
+            })
+            .transpose()?;
+        let ownership_markers = match (runtime_instance_id, run_id, spawn_nonce) {
+            (Some(runtime_instance_id), Some(run_id), Some(spawn_nonce)) => {
+                if runtime_instance_id.trim().is_empty()
+                    || run_id.trim().is_empty()
+                    || spawn_nonce.trim().is_empty()
+                {
+                    return Err("ownership marker values must not be blank".to_owned());
+                }
+                Some(OwnershipMarkers {
+                    runtime_instance_id,
+                    run_id,
+                    spawn_nonce,
+                })
+            }
+            (None, None, None) => None,
+            _ => {
+                return Err(
+                    "--runtime-instance-id, --run-id, and --spawn-nonce must be supplied together"
+                        .to_owned(),
+                );
+            }
+        };
 
         if !values.is_empty() {
             return Err(format!(
@@ -158,6 +206,7 @@ impl HostileProbeConfig {
             sample_ms,
             seed,
             repetition,
+            ownership_markers,
         })
     }
 }
@@ -275,6 +324,12 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(markers) = config.ownership_markers.as_ref() {
+        command
+            .env("AGENTIC_RUNTIME_ID", &markers.runtime_instance_id)
+            .env("AGENTIC_RUN_ID", &markers.run_id)
+            .env("AGENTIC_SPAWN_NONCE", &markers.spawn_nonce);
+    }
     let mut child = group
         .spawn(command)
         .map_err(|error| format!("spawn hostile fixture: {error}"))?;
