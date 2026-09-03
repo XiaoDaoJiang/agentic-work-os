@@ -12,8 +12,8 @@ use agentic_native_runner::runtime_receipt_store::{
     PersistedReceiptErrorKind, load_persisted_runtime_receipt, persist_published_runtime_receipt,
 };
 use agentic_native_runner::runtime_reconciliation::{
-    PersistedRunStatus, ProcessIdentityTruth, ResourceLock, ResourceTruth, RunSafetyFacts,
-    StartupDisposition, StartupReconciliationInput, reconcile_startup,
+    ResourceLock, StartupDisposition, StartupProcessTruth, StartupReconciliationFacts,
+    reconcile_startup,
 };
 
 fn disposable_root() -> PathBuf {
@@ -65,17 +65,12 @@ fn own_05_persisted_nonterminal_receipt_survives_memory_loss_and_blocks_new_run(
     assert_eq!(reloaded.published, published);
     assert_eq!(reloaded.receipt, receipt);
 
-    let decision = reconcile_startup(&StartupReconciliationInput {
+    let decision = reconcile_startup(&StartupReconciliationFacts {
         receipt_fingerprint: reloaded.published.sha256.clone(),
-        persisted_status: PersistedRunStatus::Nonterminal,
-        process_identity: ProcessIdentityTruth::ActiveOriginal,
-        safety: RunSafetyFacts {
-            root: ResourceTruth::Active,
-            descendants: vec![ResourceTruth::Unknown],
-            boundary_empty: Some(false),
-            stdout_drained: false,
-            stderr_drained: false,
-        },
+        process_truth: StartupProcessTruth::ActiveOriginal,
+        boundary_empty: Some(false),
+        stdout_drained: false,
+        stderr_drained: false,
     });
     assert_eq!(
         decision.disposition,
@@ -100,17 +95,12 @@ fn own_06_persisted_stale_receipt_only_releases_after_gone_empty_and_drained_tru
     persist_published_runtime_receipt(&path, &published).expect("persist receipt before restart");
 
     let reloaded = load_persisted_runtime_receipt(&path).expect("load stale receipt after restart");
-    let still_unsafe = reconcile_startup(&StartupReconciliationInput {
+    let still_unsafe = reconcile_startup(&StartupReconciliationFacts {
         receipt_fingerprint: reloaded.published.sha256.clone(),
-        persisted_status: PersistedRunStatus::Nonterminal,
-        process_identity: ProcessIdentityTruth::GoneOriginal,
-        safety: RunSafetyFacts {
-            root: ResourceTruth::Gone,
-            descendants: vec![ResourceTruth::Gone],
-            boundary_empty: Some(false),
-            stdout_drained: true,
-            stderr_drained: true,
-        },
+        process_truth: StartupProcessTruth::GoneOriginal,
+        boundary_empty: Some(false),
+        stdout_drained: true,
+        stderr_drained: true,
     });
     assert_eq!(
         still_unsafe.disposition,
@@ -120,17 +110,12 @@ fn own_06_persisted_stale_receipt_only_releases_after_gone_empty_and_drained_tru
     assert!(!still_unsafe.auto_adopt);
     assert!(!still_unsafe.kill_observed_pid);
 
-    let reconciled = reconcile_startup(&StartupReconciliationInput {
+    let reconciled = reconcile_startup(&StartupReconciliationFacts {
         receipt_fingerprint: reloaded.published.sha256.clone(),
-        persisted_status: PersistedRunStatus::Nonterminal,
-        process_identity: ProcessIdentityTruth::GoneOriginal,
-        safety: RunSafetyFacts {
-            root: ResourceTruth::Gone,
-            descendants: vec![ResourceTruth::Gone],
-            boundary_empty: Some(true),
-            stdout_drained: true,
-            stderr_drained: true,
-        },
+        process_truth: StartupProcessTruth::GoneOriginal,
+        boundary_empty: Some(true),
+        stdout_drained: true,
+        stderr_drained: true,
     });
     assert_eq!(
         reconciled.disposition,
