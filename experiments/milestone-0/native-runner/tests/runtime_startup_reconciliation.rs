@@ -17,7 +17,10 @@ fn facts(process_truth: StartupProcessTruth) -> StartupReconciliationFacts {
 fn own_05_active_original_after_helper_restart_requires_reconciliation_and_blocks_scheduling() {
     let decision = reconcile_startup(&facts(StartupProcessTruth::ActiveOriginal));
 
-    assert_eq!(decision.disposition, StartupDisposition::ReconciliationRequired);
+    assert_eq!(
+        decision.disposition,
+        StartupDisposition::ReconciliationRequired
+    );
     assert_eq!(decision.resource_lock, ResourceLock::Held);
     assert_eq!(decision.receipt_fingerprint, "sha256:receipt-01");
     assert!(!decision.auto_adopt);
@@ -39,7 +42,10 @@ fn own_05_unknown_process_or_boundary_truth_fails_closed_with_lock_held() {
         ..facts(StartupProcessTruth::GoneOriginal)
     };
     let decision = reconcile_startup(&boundary_unknown);
-    assert_eq!(decision.disposition, StartupDisposition::ReconciliationRequired);
+    assert_eq!(
+        decision.disposition,
+        StartupDisposition::ReconciliationRequired
+    );
     assert_eq!(decision.resource_lock, ResourceLock::Held);
 }
 
@@ -47,7 +53,10 @@ fn own_05_unknown_process_or_boundary_truth_fails_closed_with_lock_held() {
 fn own_06_original_process_gone_with_empty_boundary_and_drained_streams_reconciles_interrupted() {
     let decision = reconcile_startup(&facts(StartupProcessTruth::GoneOriginal));
 
-    assert_eq!(decision.disposition, StartupDisposition::InterruptedReconciled);
+    assert_eq!(
+        decision.disposition,
+        StartupDisposition::InterruptedReconciled
+    );
     assert_eq!(decision.resource_lock, ResourceLock::Releasable);
     assert_eq!(decision.receipt_fingerprint, "sha256:receipt-01");
     assert!(!decision.auto_adopt);
