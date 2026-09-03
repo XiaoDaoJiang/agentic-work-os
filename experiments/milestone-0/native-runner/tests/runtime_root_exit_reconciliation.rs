@@ -97,7 +97,10 @@ fn own_03_root_natural_exit_with_live_descendants_requires_reconciliation() {
         .expect("probe summary line");
     let summary: Value = serde_json::from_str(line).expect("summary must be JSON");
 
-    assert_eq!(summary.get("trigger").and_then(Value::as_str), Some("natural"));
+    assert_eq!(
+        summary.get("trigger").and_then(Value::as_str),
+        Some("natural")
+    );
     assert!(
         summary.get("teardown_error").is_some_and(Value::is_null),
         "natural root exit must complete without a harness teardown timeout"
@@ -156,7 +159,10 @@ fn own_03_root_natural_exit_with_live_descendants_requires_reconciliation() {
             .expect("stderr drain fact"),
     };
 
-    assert_eq!(evaluate_run_safety(&facts), RunSafety::ReconciliationRequired);
+    assert_eq!(
+        evaluate_run_safety(&facts),
+        RunSafety::ReconciliationRequired
+    );
     assert_ne!(
         summary.get("physical_verdict").and_then(Value::as_str),
         Some("PASS"),
