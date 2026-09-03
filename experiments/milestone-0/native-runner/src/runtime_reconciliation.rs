@@ -115,15 +115,19 @@ pub fn reconcile_startup(facts: &StartupReconciliationFacts) -> StartupReconcili
         && facts.stderr_drained;
 
     let (disposition, resource_lock) = match facts.process_truth {
-        StartupProcessTruth::ReusedPid => (StartupDisposition::ReusedPidDetected, ResourceLock::Held),
-        StartupProcessTruth::GoneOriginal if safely_gone => {
-            (StartupDisposition::InterruptedReconciled, ResourceLock::Releasable)
+        StartupProcessTruth::ReusedPid => {
+            (StartupDisposition::ReusedPidDetected, ResourceLock::Held)
         }
+        StartupProcessTruth::GoneOriginal if safely_gone => (
+            StartupDisposition::InterruptedReconciled,
+            ResourceLock::Releasable,
+        ),
         StartupProcessTruth::ActiveOriginal
         | StartupProcessTruth::GoneOriginal
-        | StartupProcessTruth::Unknown => {
-            (StartupDisposition::ReconciliationRequired, ResourceLock::Held)
-        }
+        | StartupProcessTruth::Unknown => (
+            StartupDisposition::ReconciliationRequired,
+            ResourceLock::Held,
+        ),
     };
 
     StartupReconciliationDecision {
