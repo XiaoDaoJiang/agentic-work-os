@@ -15,7 +15,10 @@ fn own_09_first_physical_failure_sticks_to_the_receipt() {
     record_historical_failure(&mut ledger, HistoricalFailure::SurvivorObserved);
 
     assert_eq!(ledger.receipt_fingerprint, "sha256:receipt-01");
-    assert_eq!(ledger.failures, [HistoricalFailure::SurvivorObserved].into());
+    assert_eq!(
+        ledger.failures,
+        [HistoricalFailure::SurvivorObserved].into()
+    );
     assert_eq!(
         failure_disposition(&ledger),
         FailureDisposition::HistoricalFailurePreserved
@@ -33,10 +36,26 @@ fn own_09_multiple_failures_accumulate_and_deduplicate_without_removal() {
     record_historical_failure(&mut ledger, HistoricalFailure::SurvivorObserved);
 
     assert_eq!(ledger.failures.len(), 4);
-    assert!(ledger.failures.contains(&HistoricalFailure::SurvivorObserved));
-    assert!(ledger.failures.contains(&HistoricalFailure::LateWriteObserved));
-    assert!(ledger.failures.contains(&HistoricalFailure::IncompleteDrain));
-    assert!(ledger.failures.contains(&HistoricalFailure::TeardownFailure));
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::SurvivorObserved)
+    );
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::LateWriteObserved)
+    );
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::IncompleteDrain)
+    );
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::TeardownFailure)
+    );
 }
 
 #[test]
@@ -47,7 +66,11 @@ fn own_09_cleanup_success_is_separate_fact_and_cannot_erase_failure() {
     record_cleanup_outcome(&mut ledger, true);
 
     assert_eq!(ledger.cleanup_succeeded, Some(true));
-    assert!(ledger.failures.contains(&HistoricalFailure::SurvivorObserved));
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::SurvivorObserved)
+    );
     assert_eq!(
         failure_disposition(&ledger),
         FailureDisposition::HistoricalFailurePreserved
@@ -63,7 +86,11 @@ fn own_09_later_safe_reconciliation_cannot_turn_historical_failure_into_pass() {
 
     assert_eq!(ledger.latest_safety, Some(RunSafety::Safe));
     assert_eq!(ledger.receipt_fingerprint, "sha256:receipt-01");
-    assert!(ledger.failures.contains(&HistoricalFailure::LateWriteObserved));
+    assert!(
+        ledger
+            .failures
+            .contains(&HistoricalFailure::LateWriteObserved)
+    );
     assert_eq!(
         failure_disposition(&ledger),
         FailureDisposition::HistoricalFailurePreserved
