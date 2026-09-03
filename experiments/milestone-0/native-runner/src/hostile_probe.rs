@@ -17,9 +17,13 @@ use tokio::time;
 use crate::hostile_evidence::{
     HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
+use crate::windows_process_truth::{WindowsProcessTruth, WindowsTruthVerdict};
+#[cfg(windows)]
+use crate::windows_process_truth::{classify_windows_process_truth, observe_windows_process_truth};
 
 const PROCESSKIT_VERSION: &str = "3.3.4";
 const FILE_FINGERPRINT_ALGORITHM: &str = "size+fnv1a64";
+const ROOT_READY_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
@@ -156,6 +160,19 @@ impl HostileProbeConfig {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WindowsTruthSample {
+    pub observation_sample_index: u32,
+    pub pid: u32,
+    pub expected_creation_time: u64,
+    pub processkit_alive: bool,
+    pub job_member: bool,
+    pub win32_truth_before_processkit: WindowsProcessTruth,
+    pub truth_verdict_before_processkit: WindowsTruthVerdict,
+    pub win32_truth: WindowsProcessTruth,
+    pub truth_verdict: WindowsTruthVerdict,
+}
+
+#[derive(Debug, Serialize)]
 pub struct HostileProbeSummary {
     pub schema: &'static str,
     pub scenario_id: String,
@@ -171,6 +188,7 @@ pub struct HostileProbeSummary {
     pub members_after: Vec<u32>,
     pub fixture_pids: Vec<u32>,
     pub survivor_pids: Vec<u32>,
+    pub windows_truth_samples: Vec<WindowsTruthSample>,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
     pub stdout_drained: bool,
@@ -215,6 +233,7 @@ struct ControlSnapshot {
 struct ObservationOutcome {
     members_after: Vec<u32>,
     survivor_pids: Vec<u32>,
+    windows_truth_samples: Vec<WindowsTruthSample>,
     observed_late_write: bool,
     observer_complete: bool,
     control_parse_complete: bool,
@@ -231,10 +250,8 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     let effective_scenario = write_effective_scenario(&config)?;
     let control_file = config.root.join("control.jsonl");
     let marker_file = config.root.join("marker.jsonl");
-
     let group = ProcessGroup::new().map_err(|error| format!("create ProcessGroup: {error}"))?;
     let actual_mechanism = group.mechanism().name().to_owned();
-
     let mut command = tokio::process::Command::new(&config.node);
     command
         .arg(&config.fixture)
@@ -252,7 +269,6 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-
     let mut child = group
         .spawn(command)
         .map_err(|error| format!("spawn hostile fixture: {error}"))?;
@@ -269,14 +285,20 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         .ok_or_else(|| "hostile fixture stderr pipe was not captured".to_owned())?;
     let stdout_task = tokio::spawn(drain_reader(stdout));
     let stderr_task = tokio::spawn(drain_reader(stderr));
-
     let mut observation_errors = Vec::new();
     let mut teardown_errors = Vec::new();
     let mut fixture_pids = BTreeSet::from([root_pid_value]);
     let mut identities = BTreeMap::new();
     try_resolve_identity(root_pid_value, false, &mut identities);
+    wait_for_root_fixture_started(
+        &control_file,
+        root_pid_value,
+        Duration::from_millis(ROOT_READY_TIMEOUT_MS),
+        Duration::from_millis(config.sample_ms),
+    )
+    .await?;
+    best_effort_discover_control(&control_file, &mut fixture_pids, &mut identities, false);
     let members_before;
-
     match config.trigger {
         Trigger::Cancel | Trigger::Timeout => {
             discover_until_deadline(
@@ -316,7 +338,6 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
             }
         }
     }
-
     let drain_budget = Duration::from_millis(config.post_stop_ms + 1_000);
     let (stdout_bytes, stdout_drained, stdout_error) =
         finish_drain(stdout_task, drain_budget, "stdout").await;
@@ -328,12 +349,10 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     if let Some(error) = stderr_error {
         observation_errors.push(error);
     }
-
     best_effort_discover_control(&control_file, &mut fixture_pids, &mut identities, true);
     let baseline_control = fingerprint_file(&control_file, &mut observation_errors);
     let baseline_marker = fingerprint_file(&marker_file, &mut observation_errors);
     let fingerprint_ready = baseline_control.is_some() && baseline_marker.is_some();
-
     let observation = observe_window(
         &group,
         &control_file,
@@ -349,7 +368,6 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     .await;
     let observer_complete = fingerprint_ready && observation.observer_complete;
     let control_parse_complete = observation.control_parse_complete;
-
     let teardown_error = if teardown_errors.is_empty() {
         None
     } else {
@@ -379,9 +397,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         cleanup_succeeded: None,
         verdict_reasons: Vec::new(),
     };
-
-    let physical_verdict = evaluate_physical_verdict(&evidence);
-    let physical_verdict_name = verdict_name(physical_verdict);
+    let physical_verdict_name = verdict_name(evaluate_physical_verdict(&evidence));
     let anchors = anchored_identities(&identities);
     let (cleanup_succeeded, cleanup_errors) = cleanup_survivors(
         &observation.survivor_pids,
@@ -391,7 +407,6 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     )
     .await;
     record_cleanup_outcome(&mut evidence, cleanup_succeeded);
-
     Ok(HostileProbeSummary {
         schema: "processkit-hostile-probe-v0",
         scenario_id,
@@ -407,6 +422,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_after: observation.members_after,
         fixture_pids: fixture_pids.into_iter().collect(),
         survivor_pids: observation.survivor_pids,
+        windows_truth_samples: observation.windows_truth_samples,
         stdout_bytes,
         stderr_bytes,
         stdout_drained,
@@ -432,13 +448,100 @@ fn verdict_name(verdict: HostileVerdict) -> &'static str {
     }
 }
 
+#[cfg(windows)]
+fn capture_windows_truth_before_processkit(
+    identities: &BTreeMap<u32, IdentityState>,
+    members: &[u32],
+) -> BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)> {
+    let members = members.iter().copied().collect::<BTreeSet<_>>();
+    identities
+        .values()
+        .filter_map(|state| {
+            let IdentityState::Anchored(anchor) = state else {
+                return None;
+            };
+            let job_member = members.contains(&anchor.pid);
+            let truth = observe_windows_process_truth(
+                anchor.pid,
+                Some(anchor.start_time),
+                None,
+                Some(job_member),
+            );
+            let verdict = classify_windows_process_truth(&truth);
+            Some((anchor.pid, (truth, verdict)))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn capture_windows_truth_before_processkit(
+    _identities: &BTreeMap<u32, IdentityState>,
+    _members: &[u32],
+) -> BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)> {
+    BTreeMap::new()
+}
+
+#[cfg(windows)]
+fn record_windows_truth_samples(
+    identities: &BTreeMap<u32, IdentityState>,
+    members: &[u32],
+    before_processkit: &BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)>,
+    liveness: &BTreeMap<u32, bool>,
+    observation_sample_index: u32,
+    samples: &mut Vec<WindowsTruthSample>,
+) {
+    let members = members.iter().copied().collect::<BTreeSet<_>>();
+    for state in identities.values() {
+        let IdentityState::Anchored(anchor) = state else {
+            continue;
+        };
+        let Some(processkit_alive) = liveness.get(&anchor.pid).copied() else {
+            continue;
+        };
+        let Some((win32_truth_before_processkit, truth_verdict_before_processkit)) =
+            before_processkit.get(&anchor.pid)
+        else {
+            continue;
+        };
+        let job_member = members.contains(&anchor.pid);
+        let win32_truth = observe_windows_process_truth(
+            anchor.pid,
+            Some(anchor.start_time),
+            Some(processkit_alive),
+            Some(job_member),
+        );
+        let truth_verdict = classify_windows_process_truth(&win32_truth);
+        samples.push(WindowsTruthSample {
+            observation_sample_index,
+            pid: anchor.pid,
+            expected_creation_time: anchor.start_time,
+            processkit_alive,
+            job_member,
+            win32_truth_before_processkit: win32_truth_before_processkit.clone(),
+            truth_verdict_before_processkit: *truth_verdict_before_processkit,
+            win32_truth,
+            truth_verdict,
+        });
+    }
+}
+
+#[cfg(not(windows))]
+fn record_windows_truth_samples(
+    _identities: &BTreeMap<u32, IdentityState>,
+    _members: &[u32],
+    _before_processkit: &BTreeMap<u32, (WindowsProcessTruth, WindowsTruthVerdict)>,
+    _liveness: &BTreeMap<u32, bool>,
+    _observation_sample_index: u32,
+    _samples: &mut [WindowsTruthSample],
+) {
+}
+
 fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
     values
         .remove(key)
         .map(PathBuf::from)
         .ok_or_else(|| format!("--{key} is required"))
 }
-
 fn required_string(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<String, String> {
     let value = values
         .remove(key)
@@ -447,19 +550,16 @@ fn required_string(values: &mut BTreeMap<String, OsString>, key: &str) -> Result
         .into_string()
         .map_err(|_| format!("--{key} must be UTF-8"))
 }
-
 fn required_u64(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<u64, String> {
     required_string(values, key)?
         .parse::<u64>()
         .map_err(|_| format!("--{key} must be an unsigned integer"))
 }
-
 fn required_u32(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<u32, String> {
     required_string(values, key)?
         .parse::<u32>()
         .map_err(|_| format!("--{key} must be a 32-bit unsigned integer"))
 }
-
 fn prepare_empty_root(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root)
         .map_err(|error| format!("create disposable root {}: {error}", root.display()))?;
@@ -473,7 +573,6 @@ fn prepare_empty_root(root: &Path) -> Result<(), String> {
     }
     Ok(())
 }
-
 fn write_effective_scenario(config: &HostileProbeConfig) -> Result<PathBuf, String> {
     let source = fs::read_to_string(&config.scenario)
         .map_err(|error| format!("read scenario {}: {error}", config.scenario.display()))?;
@@ -497,7 +596,7 @@ where
     R: AsyncRead + Unpin,
 {
     let mut total = 0_u64;
-    let mut buffer = [0_u8; 8 * 1024];
+    let mut buffer = [0_u8; 8192];
     loop {
         let count = reader.read(&mut buffer).await?;
         if count == 0 {
@@ -506,7 +605,6 @@ where
         total += count as u64;
     }
 }
-
 async fn finish_drain(
     mut task: JoinHandle<io::Result<u64>>,
     budget: Duration,
@@ -530,40 +628,89 @@ async fn finish_drain(
         }
     }
 }
-
 fn read_members(group: &ProcessGroup, label: &str, errors: &mut Vec<String>) -> Vec<u32> {
     match group.members() {
-        Ok(mut members) => {
-            members.sort_unstable();
-            members
+        Ok(mut m) => {
+            m.sort_unstable();
+            m
         }
-        Err(error) => {
-            errors.push(format!("{label}: {error}"));
+        Err(e) => {
+            errors.push(format!("{label}: {e}"));
             Vec::new()
         }
     }
 }
-
 async fn reap_root(child: &mut Child, group: &ProcessGroup, errors: &mut Vec<String>) {
     match time::timeout(Duration::from_secs(5), child.wait()).await {
-        Ok(Ok(_status)) => return,
-        Ok(Err(error)) => errors.push(format!("root wait after teardown: {error}")),
+        Ok(Ok(_)) => return,
+        Ok(Err(e)) => errors.push(format!("root wait after teardown: {e}")),
         Err(_) => errors.push("root did not exit within 5 seconds after teardown".to_owned()),
     }
-
-    if let Err(error) = group.kill_all() {
-        errors.push(format!("second kill_all: {error}"));
+    if let Err(e) = group.kill_all() {
+        errors.push(format!("second kill_all: {e}"));
     }
-    if let Err(error) = child.start_kill() {
-        errors.push(format!("direct root cleanup start_kill: {error}"));
+    if let Err(e) = child.start_kill() {
+        errors.push(format!("direct root cleanup start_kill: {e}"));
     }
     match time::timeout(Duration::from_secs(2), child.wait()).await {
-        Ok(Ok(_status)) => {}
-        Ok(Err(error)) => errors.push(format!("root cleanup wait: {error}")),
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => errors.push(format!("root cleanup wait: {e}")),
         Err(_) => errors.push("root cleanup wait exceeded 2 seconds".to_owned()),
     }
 }
-
+async fn wait_for_root_fixture_started(
+    control_file: &Path,
+    root_pid: u32,
+    timeout: Duration,
+    sample: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if root_fixture_started(control_file, root_pid)? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "root fixture.started for pid {root_pid} was not observed within {} ms",
+                timeout.as_millis()
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        time::sleep(std::cmp::min(sample, remaining)).await;
+    }
+}
+fn root_fixture_started(control_file: &Path, root_pid: u32) -> Result<bool, String> {
+    let content = match fs::read_to_string(control_file) {
+        Ok(c) => c,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => {
+            return Err(format!(
+                "read control JSONL {} while waiting for root readiness: {e}",
+                control_file.display()
+            ));
+        }
+    };
+    let has_partial_tail = !content.is_empty() && !content.ends_with('\n');
+    let parse_end = if has_partial_tail {
+        content.rfind('\n').map_or(0, |i| i + 1)
+    } else {
+        content.len()
+    };
+    for line in content[..parse_end]
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+    {
+        let v: Value = serde_json::from_str(line)
+            .map_err(|e| format!("parse completed control JSONL readiness record: {e}"))?;
+        if v.get("event").and_then(Value::as_str) == Some("fixture.started")
+            && v.get("role").and_then(Value::as_str) == Some("parent")
+            && v.get("pid").and_then(Value::as_u64) == Some(u64::from(root_pid))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 async fn discover_until_deadline(
     control_file: &Path,
     fixture_pids: &mut BTreeSet<u32>,
@@ -581,7 +728,6 @@ async fn discover_until_deadline(
         time::sleep(std::cmp::min(sample, remaining)).await;
     }
 }
-
 async fn wait_for_natural_exit(
     child: &mut Child,
     control_file: &Path,
@@ -594,7 +740,7 @@ async fn wait_for_natural_exit(
     loop {
         best_effort_discover_control(control_file, fixture_pids, identities, false);
         match child.try_wait() {
-            Ok(Some(_status)) => return true,
+            Ok(Some(_)) => return true,
             Ok(None) => {}
             Err(_) => return false,
         }
@@ -605,7 +751,6 @@ async fn wait_for_natural_exit(
         time::sleep(std::cmp::min(sample, remaining)).await;
     }
 }
-
 fn best_effort_discover_control(
     control_file: &Path,
     fixture_pids: &mut BTreeSet<u32>,
@@ -620,7 +765,6 @@ fn best_effort_discover_control(
         try_resolve_identity(pid, allow_gone, identities);
     }
 }
-
 fn strict_finalize_control(
     control_file: &Path,
     fixture_pids: &mut BTreeSet<u32>,
@@ -628,9 +772,9 @@ fn strict_finalize_control(
     errors: &mut Vec<String>,
 ) -> bool {
     let snapshot = match read_control_snapshot(control_file, true) {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            errors.push(error);
+        Ok(s) => s,
+        Err(e) => {
+            errors.push(e);
             return false;
         }
     };
@@ -642,7 +786,7 @@ fn strict_finalize_control(
                     entry.insert(state);
                 }
                 Ok(None) => {}
-                Err(error) => errors.push(error),
+                Err(e) => errors.push(e),
             }
         }
     }
@@ -652,34 +796,31 @@ fn strict_finalize_control(
     }
     snapshot.complete && fixture_pids.iter().all(|pid| identities.contains_key(pid))
 }
-
 fn read_control_snapshot(path: &Path, strict: bool) -> Result<ControlSnapshot, String> {
     let content = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == io::ErrorKind::NotFound && !strict => {
+        Ok(c) => c,
+        Err(e) if e.kind() == io::ErrorKind::NotFound && !strict => {
             return Ok(ControlSnapshot {
                 pids: BTreeSet::new(),
                 complete: false,
             });
         }
-        Err(error) => return Err(format!("read control JSONL {}: {error}", path.display())),
+        Err(e) => return Err(format!("read control JSONL {}: {e}", path.display())),
     };
-
     let has_partial_tail = !content.is_empty() && !content.ends_with('\n');
     let parse_end = if has_partial_tail {
-        content.rfind('\n').map_or(0, |index| index + 1)
+        content.rfind('\n').map_or(0, |i| i + 1)
     } else {
         content.len()
     };
     let mut pids = BTreeSet::new();
     let mut complete = !has_partial_tail;
-
     for line in content[..parse_end]
         .lines()
-        .filter(|line| !line.trim().is_empty())
+        .filter(|l| !l.trim().is_empty())
     {
         let value = match serde_json::from_str::<Value>(line) {
-            Ok(value) => value,
+            Ok(v) => v,
             Err(_) => {
                 complete = false;
                 continue;
@@ -692,10 +833,8 @@ fn read_control_snapshot(path: &Path, strict: bool) -> Result<ControlSnapshot, S
             _ => complete = false,
         }
     }
-
     Ok(ControlSnapshot { pids, complete })
 }
-
 fn try_resolve_identity(pid: u32, allow_gone: bool, identities: &mut BTreeMap<u32, IdentityState>) {
     if identities.contains_key(&pid) {
         return;
@@ -704,7 +843,6 @@ fn try_resolve_identity(pid: u32, allow_gone: bool, identities: &mut BTreeMap<u3
         identities.insert(pid, state);
     }
 }
-
 fn resolve_identity(pid: u32, allow_gone: bool) -> Result<Option<IdentityState>, String> {
     match process_info(pid) {
         Ok(Some(info)) => match info.start_time() {
@@ -715,10 +853,9 @@ fn resolve_identity(pid: u32, allow_gone: bool) -> Result<Option<IdentityState>,
         },
         Ok(None) if allow_gone => Ok(Some(IdentityState::Gone)),
         Ok(None) => Ok(None),
-        Err(error) => Err(format!("process_info({pid}): {error}")),
+        Err(e) => Err(format!("process_info({pid}): {e}")),
     }
 }
-
 fn anchored_identities(identities: &BTreeMap<u32, IdentityState>) -> BTreeMap<u32, PidAnchor> {
     identities
         .iter()
@@ -728,7 +865,6 @@ fn anchored_identities(identities: &BTreeMap<u32, IdentityState>) -> BTreeMap<u3
         })
         .collect()
 }
-
 fn fingerprint_file(path: &Path, errors: &mut Vec<String>) -> Option<FileFingerprint> {
     match fs::read(path) {
         Ok(bytes) => Some(FileFingerprint {
@@ -736,18 +872,17 @@ fn fingerprint_file(path: &Path, errors: &mut Vec<String>) -> Option<FileFingerp
             size: bytes.len() as u64,
             fnv1a64: fnv1a64(&bytes),
         }),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Some(FileFingerprint {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Some(FileFingerprint {
             exists: false,
             size: 0,
             fnv1a64: fnv1a64(&[]),
         }),
-        Err(error) => {
-            errors.push(format!("fingerprint {}: {error}", path.display()));
+        Err(e) => {
+            errors.push(format!("fingerprint {}: {e}", path.display()));
             None
         }
     }
 }
-
 fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in bytes {
@@ -773,19 +908,32 @@ async fn observe_window(
     let deadline = Instant::now() + duration;
     let mut observed_members = BTreeSet::new();
     let mut survivor_pids = BTreeSet::new();
+    let mut windows_truth_samples = Vec::new();
+    let mut observation_sample_index = 0_u32;
     let mut observed_late_write = false;
     let mut liveness_complete = true;
     let mut fingerprint_complete = true;
-
     loop {
         best_effort_discover_control(control_file, fixture_pids, identities, true);
-        observed_members.extend(read_members(group, "post-stop members", errors));
-        sample_pid_liveness(
+        let current_members = read_members(group, "post-stop members", errors);
+        observed_members.extend(current_members.iter().copied());
+        let before_processkit =
+            capture_windows_truth_before_processkit(identities, &current_members);
+        let liveness = sample_pid_liveness(
             identities,
             &mut survivor_pids,
             errors,
             &mut liveness_complete,
         );
+        record_windows_truth_samples(
+            identities,
+            &current_members,
+            &before_processkit,
+            &liveness,
+            observation_sample_index,
+            &mut windows_truth_samples,
+        );
+        observation_sample_index = observation_sample_index.saturating_add(1);
         compare_file_fingerprint(
             control_file,
             baseline_control,
@@ -800,27 +948,37 @@ async fn observe_window(
             &mut fingerprint_complete,
             &mut observed_late_write,
         );
-
         if Instant::now() >= deadline {
             break;
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
         time::sleep(std::cmp::min(sample, remaining)).await;
     }
-
     let control_parse_complete =
         strict_finalize_control(control_file, fixture_pids, identities, errors);
-    sample_pid_liveness(
+    let final_members = read_members(group, "final post-stop members", errors);
+    observed_members.extend(final_members.iter().copied());
+    let final_before_processkit =
+        capture_windows_truth_before_processkit(identities, &final_members);
+    let final_liveness = sample_pid_liveness(
         identities,
         &mut survivor_pids,
         errors,
         &mut liveness_complete,
     );
+    record_windows_truth_samples(
+        identities,
+        &final_members,
+        &final_before_processkit,
+        &final_liveness,
+        observation_sample_index,
+        &mut windows_truth_samples,
+    );
     let identity_complete = fixture_pids.iter().all(|pid| identities.contains_key(pid));
-
     ObservationOutcome {
         members_after: observed_members.into_iter().collect(),
         survivor_pids: survivor_pids.into_iter().collect(),
+        windows_truth_samples,
         observed_late_write,
         observer_complete: control_parse_complete
             && identity_complete
@@ -829,13 +987,13 @@ async fn observe_window(
         control_parse_complete,
     }
 }
-
 fn sample_pid_liveness(
     identities: &BTreeMap<u32, IdentityState>,
     survivors: &mut BTreeSet<u32>,
     errors: &mut Vec<String>,
     complete: &mut bool,
-) {
+) -> BTreeMap<u32, bool> {
+    let mut observations = BTreeMap::new();
     for state in identities.values() {
         let IdentityState::Anchored(anchor) = state else {
             continue;
@@ -843,19 +1001,22 @@ fn sample_pid_liveness(
         match process_is_alive(anchor.pid, Some(anchor.start_time)) {
             Ok(true) => {
                 survivors.insert(anchor.pid);
+                observations.insert(anchor.pid, true);
             }
-            Ok(false) => {}
-            Err(error) => {
+            Ok(false) => {
+                observations.insert(anchor.pid, false);
+            }
+            Err(e) => {
                 errors.push(format!(
-                    "process_is_alive({}, {}): {error}",
+                    "process_is_alive({}, {}): {e}",
                     anchor.pid, anchor.start_time
                 ));
                 *complete = false;
             }
         }
     }
+    observations
 }
-
 fn compare_file_fingerprint(
     path: &Path,
     baseline: Option<FileFingerprint>,
@@ -873,7 +1034,6 @@ fn compare_file_fingerprint(
         _ => *complete = false,
     }
 }
-
 async fn cleanup_survivors(
     survivor_pids: &[u32],
     anchors: &BTreeMap<u32, PidAnchor>,
@@ -883,16 +1043,12 @@ async fn cleanup_survivors(
     if survivor_pids.is_empty() {
         return (true, Vec::new());
     }
-
     let mut errors = Vec::new();
     let cleanup_group = match ProcessGroup::new() {
-        Ok(group) => group,
-        Err(error) => {
-            return (false, vec![format!("create cleanup ProcessGroup: {error}")]);
-        }
+        Ok(g) => g,
+        Err(e) => return (false, vec![format!("create cleanup ProcessGroup: {e}")]),
     };
     let mut adopted_any = false;
-
     for pid in survivor_pids {
         let Some(anchor) = anchors.get(pid) else {
             errors.push(format!("survivor {pid} has no reuse-safe identity anchor"));
@@ -902,21 +1058,19 @@ async fn cleanup_survivors(
             Ok(false) => {}
             Ok(true) => match cleanup_group.adopt_external(*pid) {
                 Ok(()) => adopted_any = true,
-                Err(error) => errors.push(format!("cleanup adopt_external({pid}): {error}")),
+                Err(e) => errors.push(format!("cleanup adopt_external({pid}): {e}")),
             },
-            Err(error) => errors.push(format!(
-                "cleanup liveness check ({pid}, {}): {error}",
+            Err(e) => errors.push(format!(
+                "cleanup liveness check ({pid}, {}): {e}",
                 anchor.start_time
             )),
         }
     }
-
     if adopted_any {
-        if let Err(error) = cleanup_group.kill_all() {
-            errors.push(format!("cleanup kill_all: {error}"));
+        if let Err(e) = cleanup_group.kill_all() {
+            errors.push(format!("cleanup kill_all: {e}"));
         }
     }
-
     let deadline = Instant::now() + timeout;
     loop {
         let mut any_alive = false;
@@ -928,10 +1082,10 @@ async fn cleanup_survivors(
             match process_is_alive(*pid, Some(anchor.start_time)) {
                 Ok(true) => any_alive = true,
                 Ok(false) => {}
-                Err(error) => {
+                Err(e) => {
                     any_alive = true;
                     errors.push(format!(
-                        "cleanup final liveness ({pid}, {}): {error}",
+                        "cleanup final liveness ({pid}, {}): {e}",
                         anchor.start_time
                     ));
                 }
@@ -956,7 +1110,6 @@ mod tests {
     use super::{ControlSnapshot, read_control_snapshot};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
-
     fn temp_file(name: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -967,33 +1120,26 @@ mod tests {
             std::process::id()
         ))
     }
-
     #[test]
     fn discovery_ignores_only_a_partial_trailing_record_but_strict_final_rejects_it() {
         let path = temp_file("control-partial-tail");
         fs::write(&path, b"{\"pid\":11}\n{\"pid\":12").expect("write fixture");
-
         let ControlSnapshot { pids, complete } =
             read_control_snapshot(&path, false).expect("discovery snapshot");
         assert_eq!(pids.into_iter().collect::<Vec<_>>(), vec![11]);
         assert!(!complete);
-
         let strict = read_control_snapshot(&path, true).expect("strict snapshot");
         assert_eq!(strict.pids.into_iter().collect::<Vec<_>>(), vec![11]);
         assert!(!strict.complete);
-
         fs::remove_file(path).expect("remove fixture");
     }
-
     #[test]
     fn strict_final_accepts_only_complete_pid_bearing_jsonl() {
         let path = temp_file("control-complete");
         fs::write(&path, b"{\"pid\":11}\n{\"pid\":12}\n").expect("write fixture");
-
         let strict = read_control_snapshot(&path, true).expect("strict snapshot");
         assert_eq!(strict.pids.into_iter().collect::<Vec<_>>(), vec![11, 12]);
         assert!(strict.complete);
-
         fs::remove_file(path).expect("remove fixture");
     }
 }
