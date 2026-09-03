@@ -34,7 +34,7 @@ pub enum PublishErrorKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PublishError {
     kind: PublishErrorKind,
-    preserved_state: ReceiptPublicationState,
+    preserved_state: Box<ReceiptPublicationState>,
     message: String,
 }
 
@@ -44,7 +44,7 @@ impl PublishError {
     }
 
     pub fn preserved_state(&self) -> &ReceiptPublicationState {
-        &self.preserved_state
+        self.preserved_state.as_ref()
     }
 }
 
@@ -55,7 +55,7 @@ pub fn publish_runtime_receipt(
     if let Err(message) = validate_runtime_receipt(receipt) {
         return Err(PublishError {
             kind: PublishErrorKind::InvalidReceipt,
-            preserved_state: state,
+            preserved_state: Box::new(state),
             message,
         });
     }
@@ -65,7 +65,7 @@ pub fn publish_runtime_receipt(
         Err(error) => {
             return Err(PublishError {
                 kind: PublishErrorKind::Serialization,
-                preserved_state: state,
+                preserved_state: Box::new(state),
                 message: format!("serialize RuntimeReceipt: {error}"),
             });
         }
@@ -90,7 +90,7 @@ pub fn publish_runtime_receipt(
         }
         Some(_) => Err(PublishError {
             kind: PublishErrorKind::ConflictingPublication,
-            preserved_state: state,
+            preserved_state: Box::new(state),
             message: "RuntimeReceipt publication slot already contains different bytes".to_owned(),
         }),
     }
