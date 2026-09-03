@@ -59,9 +59,11 @@ fn own_05_persisted_nonterminal_receipt_survives_memory_loss_and_blocks_new_run(
         .expect("publish receipt");
     let published = publication.published.expect("published receipt");
 
-    persist_published_runtime_receipt(&path, &published).expect("persist receipt before helper loss");
+    persist_published_runtime_receipt(&path, &published)
+        .expect("persist receipt before helper loss");
 
-    let reloaded = load_persisted_runtime_receipt(&path).expect("restart must load persisted receipt");
+    let reloaded =
+        load_persisted_runtime_receipt(&path).expect("restart must load persisted receipt");
     assert_eq!(reloaded.published, published);
     assert_eq!(reloaded.receipt, receipt);
 
