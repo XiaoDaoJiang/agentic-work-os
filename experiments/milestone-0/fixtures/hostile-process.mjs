@@ -65,6 +65,23 @@ async function main() {
   }
 
   const role = options.role;
+  const ownershipValues = [
+    process.env.AGENTIC_RUNTIME_ID,
+    process.env.AGENTIC_RUN_ID,
+    process.env.AGENTIC_SPAWN_NONCE
+  ];
+  const ownershipValueCount = ownershipValues.filter((value) => value !== undefined).length;
+  if (ownershipValueCount !== 0 && ownershipValueCount !== ownershipValues.length) {
+    throw new Error('ownership marker environment must contain all three marker values or none');
+  }
+  const ownership = ownershipValueCount === ownershipValues.length
+    ? {
+        runtime_instance_id: process.env.AGENTIC_RUNTIME_ID,
+        run_id: process.env.AGENTIC_RUN_ID,
+        spawn_nonce: process.env.AGENTIC_SPAWN_NONCE
+      }
+    : null;
+
   let eventChain = Promise.resolve();
   const emit = (event, payload = {}) => {
     const record = {
@@ -74,6 +91,7 @@ async function main() {
       ppid: process.ppid,
       monotonicNs: process.hrtime.bigint().toString(),
       timestamp: new Date().toISOString(),
+      ...(ownership ? { ownership } : {}),
       payload
     };
     eventChain = eventChain.then(() => appendFile(controlFile, `${JSON.stringify(record)}\n`, 'utf8'));
