@@ -78,10 +78,11 @@ pub fn persist_published_runtime_receipt(
 
     match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(mut file) => {
-            file.write_all(&bytes).map_err(|error| PersistedReceiptError {
-                kind: PersistedReceiptErrorKind::Io,
-                message: format!("write persisted RuntimeReceipt: {error}"),
-            })?;
+            file.write_all(&bytes)
+                .map_err(|error| PersistedReceiptError {
+                    kind: PersistedReceiptErrorKind::Io,
+                    message: format!("write persisted RuntimeReceipt: {error}"),
+                })?;
             file.sync_all().map_err(|error| PersistedReceiptError {
                 kind: PersistedReceiptErrorKind::Io,
                 message: format!("sync persisted RuntimeReceipt: {error}"),
