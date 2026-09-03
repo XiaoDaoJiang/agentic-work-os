@@ -54,7 +54,9 @@ enum ReducedPidState {
     ExecutingSurvivor,
 }
 
-pub fn reduce_windows_observer_samples(samples: &[WindowsObserverSample]) -> WindowsObserverSummary {
+pub fn reduce_windows_observer_samples(
+    samples: &[WindowsObserverSample],
+) -> WindowsObserverSummary {
     let mut states = BTreeMap::<u32, ReducedPidState>::new();
 
     for sample in samples {
