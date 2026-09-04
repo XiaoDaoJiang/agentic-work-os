@@ -1,0 +1,57 @@
+name: Temporary format Linux active-state diagnostic
+
+on:
+  push:
+    branches:
+      - spike/linux-cgroup-v2-hostile
+    paths:
+      - .github/workflows/tmp-fmt-linux-active-state.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Linux diagnostic branch
+        uses: actions/checkout@v6
+        with:
+          ref: spike/linux-cgroup-v2-hostile
+      - name: Verify expected head
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "b47a914c070ccc58a823ac7681f46fbf1e4ddbd3" || test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Remove unused import only
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('experiments/milestone-0/native-runner/src/bin/linux-cgroup-active-state-diagnostic.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '    use tokio::process::{Child, Command};\n'
+          new = '    use tokio::process::Command;\n'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one Child import')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt
+      - name: Format native runner
+        run: cargo fmt --manifest-path experiments/milestone-0/native-runner/Cargo.toml
+      - name: Commit diagnostic formatting only
+        shell: bash
+        run: |
+          target=experiments/milestone-0/native-runner/src/bin/linux-cgroup-active-state-diagnostic.rs
+          unexpected="$(git diff --name-only | grep -v -Fx "$target" || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected files changed:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$target"
+          git commit -m "style(m0): format Linux active-state diagnostic"
+          git push origin HEAD:spike/linux-cgroup-v2-hostile
