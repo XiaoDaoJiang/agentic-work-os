@@ -20,7 +20,7 @@ mod linux {
     use processkit::{ProcessGroup, process_info, process_is_alive};
     use serde::Serialize;
     use serde_json::{Value, json};
-    use tokio::process::{Child, Command};
+    use tokio::process::Command;
     use tokio::time;
 
     const REQUIRED_REPETITIONS: u32 = 50;
@@ -237,7 +237,12 @@ mod linux {
             .id()
             .ok_or_else(|| "spawned fixture did not expose root pid".to_owned())?;
 
-        wait_for_root_started(&control_file, root_pid, Duration::from_millis(READY_TIMEOUT_MS)).await?;
+        wait_for_root_started(
+            &control_file,
+            root_pid,
+            Duration::from_millis(READY_TIMEOUT_MS),
+        )
+        .await?;
         time::sleep(Duration::from_millis(config.trigger_ms)).await;
 
         let mut members_before = group
@@ -273,12 +278,8 @@ mod linux {
             for (pid, start_time) in &anchors {
                 let raw_alive = process_is_alive(*pid, Some(*start_time)).ok();
                 let member = current_members.contains(pid);
-                let truth = observe_linux_process_truth(
-                    *pid,
-                    Some(*start_time),
-                    raw_alive,
-                    Some(member),
-                );
+                let truth =
+                    observe_linux_process_truth(*pid, Some(*start_time), raw_alive, Some(member));
                 let verdict = classify_linux_process_truth(&truth);
                 samples.push(LinuxTruthSample {
                     sample_index,
@@ -315,12 +316,8 @@ mod linux {
         for (pid, start_time) in &anchors {
             let raw_alive = process_is_alive(*pid, Some(*start_time)).ok();
             let member = final_member_set.contains(pid);
-            let truth = observe_linux_process_truth(
-                *pid,
-                Some(*start_time),
-                raw_alive,
-                Some(member),
-            );
+            let truth =
+                observe_linux_process_truth(*pid, Some(*start_time), raw_alive, Some(member));
             let verdict = classify_linux_process_truth(&truth);
             final_pid_truth.push(FinalPidTruth {
                 pid: *pid,
@@ -332,8 +329,10 @@ mod linux {
             });
         }
 
-        let final_active_original_pids = final_pids(&final_pid_truth, LinuxTruthVerdict::ActiveOriginal);
-        let final_zombie_original_pids = final_pids(&final_pid_truth, LinuxTruthVerdict::ZombieOriginal);
+        let final_active_original_pids =
+            final_pids(&final_pid_truth, LinuxTruthVerdict::ActiveOriginal);
+        let final_zombie_original_pids =
+            final_pids(&final_pid_truth, LinuxTruthVerdict::ZombieOriginal);
         let final_reused_pids = final_pids(&final_pid_truth, LinuxTruthVerdict::ReusedPid);
         let final_inconclusive_pids = final_pids(&final_pid_truth, LinuxTruthVerdict::Inconclusive);
         let any_active_original_observed_after_kill = samples
@@ -520,9 +519,7 @@ mod linux {
 
     fn validate_config(config: &Config) -> Result<(), String> {
         if config.repetitions != REQUIRED_REPETITIONS {
-            return Err(format!(
-                "--repetitions is frozen at {REQUIRED_REPETITIONS}"
-            ));
+            return Err(format!("--repetitions is frozen at {REQUIRED_REPETITIONS}"));
         }
         if config.trigger_ms != REQUIRED_TRIGGER_MS {
             return Err(format!("--trigger-ms is frozen at {REQUIRED_TRIGGER_MS}"));
