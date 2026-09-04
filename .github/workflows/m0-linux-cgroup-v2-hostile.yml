@@ -46,6 +46,7 @@ jobs:
           mkdir -p experiments/milestone-0/evidence/processkit-hostile-cgroup-v2
 
           docker run --rm \
+            --init \
             --privileged \
             --cgroupns=private \
             --volume "${GITHUB_WORKSPACE}:/work" \
@@ -65,6 +66,7 @@ jobs:
                 echo "rustc=$(rustc --version)"
                 echo "cargo=$(cargo --version)"
                 echo "kernel=$(uname -srmo)"
+                echo "pid1_cmdline=$(tr "\\0" " " < /proc/1/cmdline)"
                 echo "cgroup_self=$(cat /proc/self/cgroup)"
                 echo "cgroup_mount=$(mount | grep " on /sys/fs/cgroup " || true)"
                 echo "cgroup_controllers=$(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || true)"
