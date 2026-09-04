@@ -80,9 +80,13 @@ jobs:
               expected="processkit = \"=${PROCESSKIT_VERSION}\""
               grep -F "$expected" native-runner/Cargo.toml
               cargo metadata --locked --manifest-path native-runner/Cargo.toml --format-version 1 --no-deps > /dev/null
-              cargo build --locked --release --manifest-path native-runner/Cargo.toml --bin hostile-probe
+              cargo build --locked --release \
+                --manifest-path native-runner/Cargo.toml \
+                --bin hostile-probe \
+                --bin linux-cgroup-active-state-diagnostic
 
               probe="$PWD/native-runner/target/release/hostile-probe"
+              diagnostic="$PWD/native-runner/target/release/linux-cgroup-active-state-diagnostic"
               node_executable="$(command -v node)"
               preflight_root="$evidence_dir/preflight-root"
               rm -rf "$preflight_root"
@@ -104,6 +108,17 @@ jobs:
               node scripts/validate-cgroup-v2-evidence.mjs preflight "$evidence_dir/preflight.json"
 
               rm -rf "$preflight_root"
+
+              "$diagnostic" \
+                --node "$node_executable" \
+                --fixture "$PWD/fixtures/hostile-process.mjs" \
+                --scenario "$PWD/hostile-scenarios/root-exit-detached.json" \
+                --output-dir "$evidence_dir/active-state-diagnostic" \
+                --repetitions 50 \
+                --trigger-ms 250 \
+                --post-stop-ms 750 \
+                --sample-ms 50 \
+                > "$evidence_dir/active-state-diagnostic.stdout.json"
 
               node scripts/run-processkit-hostile-matrix.mjs \
                 --mode race \
