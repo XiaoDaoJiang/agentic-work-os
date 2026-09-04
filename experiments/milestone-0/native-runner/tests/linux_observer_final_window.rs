@@ -20,9 +20,24 @@ fn sample(
 #[test]
 fn transient_active_and_zombie_are_diagnostic_but_final_gone_is_not_a_survivor() {
     let during_window = vec![
-        sample(20, Some(true), Some(true), LinuxTruthVerdict::ActiveOriginal),
-        sample(20, Some(true), Some(true), LinuxTruthVerdict::ZombieOriginal),
-        sample(21, Some(true), Some(true), LinuxTruthVerdict::ZombieOriginal),
+        sample(
+            20,
+            Some(true),
+            Some(true),
+            LinuxTruthVerdict::ActiveOriginal,
+        ),
+        sample(
+            20,
+            Some(true),
+            Some(true),
+            LinuxTruthVerdict::ZombieOriginal,
+        ),
+        sample(
+            21,
+            Some(true),
+            Some(true),
+            LinuxTruthVerdict::ZombieOriginal,
+        ),
     ];
     let final_snapshot = vec![
         sample(20, Some(false), Some(false), LinuxTruthVerdict::Gone),
