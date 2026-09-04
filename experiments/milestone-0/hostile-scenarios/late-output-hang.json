@@ -1,0 +1,17 @@
+{
+  "hostile_process_v0": {
+    "seed": 29,
+    "stdoutFrames": ["late-output-start"],
+    "stderrFrames": ["late-output-start"],
+    "outputIntervalMs": 5,
+    "timingJitterMs": 2,
+    "continuousOutputIntervalMs": 10,
+    "spawnChild": false,
+    "spawnGrandchild": false,
+    "exitMode": "hang",
+    "markerWrites": 6,
+    "markerIntervalMs": 20,
+    "lateWriteDelayMs": 100,
+    "ignoreSoftStop": true
+  }
+}

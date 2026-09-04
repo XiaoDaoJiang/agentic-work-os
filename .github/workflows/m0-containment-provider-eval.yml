@@ -1,0 +1,90 @@
+name: M0 containment provider eval
+
+on:
+  push:
+    branches:
+      - spike/containment-provider-eval
+    paths:
+      - .github/workflows/m0-containment-provider-eval.yml
+      - experiments/milestone-0/provider-eval/**
+  pull_request:
+    paths:
+      - .github/workflows/m0-containment-provider-eval.yml
+      - experiments/milestone-0/provider-eval/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provider-eval:
+    name: Provider Eval (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust 1.88.0
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate committed dependency lock
+        run: cargo metadata --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --format-version 1 --no-deps
+
+      - name: Run provider evaluation tests
+        run: cargo test --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path experiments/milestone-0/provider-eval/Cargo.toml -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build release probe
+        run: cargo build --locked --release --manifest-path experiments/milestone-0/provider-eval/Cargo.toml --bin provider-probe
+
+      - name: Capture runtime provider evidence
+        shell: bash
+        working-directory: experiments/milestone-0/provider-eval
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            probe="target/release/provider-probe.exe"
+          else
+            probe="target/release/provider-probe"
+          fi
+          "$probe" --candidate processkit > evidence/processkit.json
+          "$probe" --candidate process-wrap > evidence/process-wrap.json
+          "$probe" --candidate direct-os > evidence/direct-os.json
+          printf '{"schema":"containment-provider-build-v0","runner_os":"%s","binary_size_bytes":%s}\n' \
+            "$RUNNER_OS" "$(wc -c < "$probe" | tr -d ' ')" > evidence/build.json
+          cat evidence/processkit.json
+          cat evidence/process-wrap.json
+          cat evidence/direct-os.json
+          cat evidence/build.json
+
+      - name: Upload provider evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: containment-provider-eval-${{ matrix.os }}
+          path: experiments/milestone-0/provider-eval/evidence/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload committed Cargo lock
+        uses: actions/upload-artifact@v7
+        with:
+          name: containment-provider-lock-${{ matrix.os }}
+          path: experiments/milestone-0/provider-eval/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7

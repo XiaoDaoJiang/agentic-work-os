@@ -1,0 +1,22 @@
+{
+  "hostile_process_v0": {
+    "seed": 20260831,
+    "stdoutFrames": ["stdout-a", "stdout-b", "stdout-c"],
+    "stderrFrames": ["stderr-a", "stderr-b"],
+    "outputIntervalMs": 5,
+    "timingJitterMs": 7,
+    "segmentOutput": true,
+    "continuousOutputIntervalMs": 25,
+    "stdinNonce": true,
+    "spawnChild": true,
+    "spawnGrandchild": true,
+    "delayedDescendantMs": 20,
+    "rootExitBeforeDescendants": false,
+    "exitMode": "hang",
+    "nonzeroExitCode": 7,
+    "markerWrites": 50,
+    "markerIntervalMs": 20,
+    "lateWriteDelayMs": 50,
+    "ignoreSoftStop": true
+  }
+}

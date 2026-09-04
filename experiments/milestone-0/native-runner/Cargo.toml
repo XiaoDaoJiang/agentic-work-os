@@ -1,0 +1,15 @@
+[package]
+name = "agentic-native-runner"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+description = "Experiment-only native process runner for Agentic Work OS Milestone 0"
+
+[dependencies]
+processkit = "=3.3.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "=0.11.0"
+tokio = { version = "1", features = ["process", "io-util", "time", "rt-multi-thread", "macros", "sync"] }
