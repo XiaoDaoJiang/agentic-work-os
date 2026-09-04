@@ -111,3 +111,28 @@ fn unreadable_or_malformed_proc_truth_fails_closed() {
         LinuxTruthVerdict::Inconclusive
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_proc_start_time_matches_processkit_identity_anchor() {
+    let pid = std::process::id();
+    let expected_start_time = processkit::process_info(pid)
+        .expect("ProcessKit process_info query must succeed")
+        .expect("current process must exist")
+        .start_time()
+        .expect("current process must expose a reuse-safe start time");
+
+    let observed = agentic_native_runner::linux_process_truth::observe_linux_process_truth(
+        pid,
+        Some(expected_start_time),
+        Some(true),
+        None,
+    );
+
+    assert_eq!(observed.observed_start_time, Some(expected_start_time));
+    assert_ne!(observed.process_state, Some('Z'));
+    assert_eq!(
+        classify_linux_process_truth(&observed),
+        LinuxTruthVerdict::ActiveOriginal
+    );
+}
