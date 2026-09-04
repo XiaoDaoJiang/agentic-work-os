@@ -87,12 +87,8 @@ fn different_start_time_is_reused_pid_even_when_proc_entry_exists() {
 
 #[test]
 fn missing_proc_entry_is_gone() {
-    let verdict = classify_linux_process_truth(&truth(
-        LinuxProcReadState::NotFound,
-        Some(99),
-        None,
-        None,
-    ));
+    let verdict =
+        classify_linux_process_truth(&truth(LinuxProcReadState::NotFound, Some(99), None, None));
 
     assert_eq!(verdict, LinuxTruthVerdict::Gone);
 }
@@ -100,12 +96,7 @@ fn missing_proc_entry_is_gone() {
 #[test]
 fn unreadable_or_malformed_proc_truth_fails_closed() {
     for read_state in [LinuxProcReadState::AccessDenied, LinuxProcReadState::Failed] {
-        let verdict = classify_linux_process_truth(&truth(
-            read_state,
-            Some(99),
-            None,
-            None,
-        ));
+        let verdict = classify_linux_process_truth(&truth(read_state, Some(99), None, None));
         assert_eq!(verdict, LinuxTruthVerdict::Inconclusive);
     }
 
