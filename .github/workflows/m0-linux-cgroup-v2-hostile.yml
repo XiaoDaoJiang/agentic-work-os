@@ -7,6 +7,7 @@ on:
       - experiments/milestone-0/cgroup-v2/**
       - experiments/milestone-0/native-runner/**
       - experiments/milestone-0/scripts/run-processkit-hostile-matrix.mjs
+      - experiments/milestone-0/scripts/validate-cgroup-v2-evidence.mjs
       - experiments/milestone-0/fixtures/**
       - experiments/milestone-0/hostile-scenarios/**
   workflow_dispatch:
@@ -98,16 +99,7 @@ jobs:
                 --repetition 0)"
 
               printf "%s\n" "$preflight" > "$evidence_dir/preflight.json"
-
-              node - "$evidence_dir/preflight.json" <<"NODE"
-              const fs = require("node:fs");
-              const summary = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-              if (summary.actual_mechanism !== "cgroup_v2") {
-                console.error(`CgroupV2PreconditionError: expected cgroup_v2, got ${summary.actual_mechanism}`);
-                process.exit(2);
-              }
-              console.log(`cgroup-v2 preflight confirmed: ${summary.actual_mechanism}`);
-              NODE
+              node scripts/validate-cgroup-v2-evidence.mjs preflight "$evidence_dir/preflight.json"
 
               rm -rf "$preflight_root"
 
@@ -119,29 +111,7 @@ jobs:
                 --scenario-dir "$PWD/hostile-scenarios" \
                 --output-dir "$evidence_dir/matrix"
 
-              node - "$evidence_dir/matrix/matrix-summary.json" <<"NODE"
-              const fs = require("node:fs");
-              const summary = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-              const mechanisms = summary.actual_mechanisms ?? [];
-              if (summary.run_count !== 200) {
-                console.error(`FrozenMatrixError: expected 200 runs, got ${summary.run_count}`);
-                process.exit(3);
-              }
-              if (summary.harness_status !== "PASS") {
-                console.error(`FrozenMatrixError: harness status is ${summary.harness_status}`);
-                process.exit(4);
-              }
-              if (mechanisms.length !== 1 || mechanisms[0] !== "cgroup_v2") {
-                console.error(`CgroupV2PreconditionError: matrix mechanisms=${JSON.stringify(mechanisms)}`);
-                process.exit(5);
-              }
-              console.log(JSON.stringify({
-                run_count: summary.run_count,
-                harness_status: summary.harness_status,
-                actual_mechanisms: mechanisms,
-                scenario_verdict_counts: summary.scenario_verdict_counts
-              }));
-              NODE
+              node scripts/validate-cgroup-v2-evidence.mjs matrix "$evidence_dir/matrix/matrix-summary.json"
             '
 
       - name: Upload raw cgroup-v2 evidence
