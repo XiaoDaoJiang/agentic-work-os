@@ -1,0 +1,85 @@
+name: M0 Cross-platform Contracts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - spike/cross-platform-runtime-foundation
+      - spike/milestone-0-harness
+    paths:
+      - '.github/workflows/m0-cross-platform-contracts.yml'
+      - 'experiments/milestone-0/**'
+      - 'docs/superpowers/plans/2026-09-01-cross-platform-runtime-foundation.md'
+  pull_request:
+    paths:
+      - '.github/workflows/m0-cross-platform-contracts.yml'
+      - 'experiments/milestone-0/**'
+      - 'docs/superpowers/plans/2026-09-01-cross-platform-runtime-foundation.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Contracts (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+
+    defaults:
+      run:
+        working-directory: experiments/milestone-0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Record tool versions
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          git --version
+          rustc --version
+          cargo --version
+          printf 'runner_os=%s\n' '${{ matrix.os }}'
+
+      - name: Run cross-platform Node contracts
+        run: npm run test:cross-platform
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Test Rust protocol
+        run: npm run test:rust
+
+      - name: Build Rust helper
+        run: npm run build:rust
+
+      - name: Emit capability evidence
+        run: npm run capabilities:rust
+
+      - name: Upload capability evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-capabilities-${{ matrix.platform }}
+          path: experiments/milestone-0/evidence/ci/capabilities-*.json
+          if-no-files-found: error
+          retention-days: 14
