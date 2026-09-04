@@ -1,0 +1,26 @@
+instance_id: ORBIS-PR-11
+source_date: 2026-08-31T09:28:29Z
+selection_rule_position: I04
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/11
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33376538555
+    observed_outcome: failed
+    evidence: Presentation Platform contract failed because the Brief adapter module did not yet exist
+  - checkpoint_id: gha-33376661170
+    observed_outcome: succeeded
+    evidence: final Presentation Descriptor/Registry contract and complete build pipeline green
+workspace_ownership: "repository branch refactor/presentation-platform-registry is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR and GitHub Actions checkpoints are uniquely attributable to PR #11; coding-agent native events are not public"
+artifact_ownership: "final artifact 9752141503 and preview-pr-11 are uniquely attributable to PR #11"
+review_decision_ownership: "GitHub merge decision for PR #11; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

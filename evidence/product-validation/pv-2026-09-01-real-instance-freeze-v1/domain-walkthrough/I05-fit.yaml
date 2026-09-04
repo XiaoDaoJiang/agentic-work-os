@@ -1,0 +1,20 @@
+instance_id: ORBIS-PR-10
+selection_rule_position: I05
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/10
+fit_classification: natural_fit
+giant_task_required: false
+special_fk_required: false
+ambiguous_ownership: false
+exception_lifecycle_required: false
+known_fact_mapping:
+  objective_owner: one_pr_level_engineering_objective
+  verification_events: uniquely_attributable
+  artifact_ownership: unique
+  final_decision_ownership: unique
+unresolved:
+  run_attempt_boundary: unknown
+  native_session_ownership: unknown
+  local_workspace_lifecycle: unknown
+trajectory_evidence: []
+fit_rationale: >-
+  The homepage-discovery objective, failed site-check, successful build/publish evidence and final merge decision remain uniquely attributable without a special-case aggregate relation.

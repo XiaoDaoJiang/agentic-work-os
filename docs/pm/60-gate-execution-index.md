@@ -1,175 +1,142 @@
 # Agentic Work OS — Gate Execution Index
 
-> 状态：Active governance index；不包含任何验证结果  
-> 日期：2026-08-31  
+> 状态：Active governance index  
+> 日期：2026-09-03  
 > 需求基线：[MVP PRD](./20-mvp-prd.md)、[PRD Red Team](./30-prd-red-team.md)  
 > 执行协议：[Validation Protocol](./40-validation-protocol.md)、[Milestone 0 Experiment Plan](./50-milestone-0-experiment-plan.md)
 
 ## 1. 目的与边界
 
-本文件是 Product Validation 与 Technical Validation 的执行治理索引，用于记录：
+本文件是 Product Validation 与 Technical Validation 的执行治理索引，用于记录当前证据线状态、证据位置、独立 Decision Record 和被 Gate 阻断的产品工作。
 
-- 当前证据线处于什么状态；
-- 建议在哪个分支执行；
-- 原始证据与 Decision Record 放在哪里；
-- 哪些工作仍被 Gate 阻断；
-- 何时允许生成产品 MVP WWA。
-
-本文件不是验证报告、产品 Backlog、实施计划或生产 Schema。没有可引用的最终 Decision Record 时，不得在这里补写 `PASS`、用户结论或技术能力结论。
+本文件不是产品 Backlog、实施计划或生产 Schema。没有可引用的 Final Decision Record 时，不得补写 `PASS` 或产品结论。
 
 ## 2. 当前门控状态
 
-以下状态只描述 `pm/requirements-discovery` 分支当前已记录的事实，不推断其他本地或未合并工作：
+| 轨道 / 门槛 | 当前执行状态 | 最终 verdict | 后果 |
+|---|---|---|---|
+| Product Validation | **IN_PROGRESS**：执行分支 `validation/concierge-execution`；9/9 frozen first-nine fit 完成，首条 adverse trajectory `TR-09` 已成立，当前 1/6；外部 Concierge 尚未开始 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
+| Technical Validation | **IN_PROGRESS / independent**：`spike/milestone-0-harness` 持续执行；Technical Gate 尚未 Final | `NOT_RECORDED` | 不能授权产品 MVP WWA |
+| Product + Technical Gate | `BLOCKED`：等待两个独立 Gate Final、必要 PRD 修订闭环及联合 Decision Record | `NOT_EVALUATED` | WWA、实施计划和生产 Schema/API 冻结保持 No-Go |
+| Product MVP WWA | `BLOCKED` | 不适用 | 不得创建 `docs/pm/70-mvp-wwa-backlog.md` |
 
-| 轨道 / 门槛 | 依据 | 当前分支记录状态 | 最终 verdict | 后果 |
-|---|---|---|---|---|
-| Product Validation | [`40-validation-protocol.md`](./40-validation-protocol.md) | `READY_TO_EXECUTE`：协议已冻结；尚无参与者、真实问题、独立 Decision Record 或 Gate 结果记录 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
-| Technical Validation | [`50-milestone-0-experiment-plan.md`](./50-milestone-0-experiment-plan.md) | `READY_TO_EXECUTE`：计划已冻结；尚无 Spike 证据、跨切合同结论或 Technical Gate 结果记录 | `NOT_RECORDED` | 不能授权产品 MVP WWA |
-| Product + Technical Gate | [`20-mvp-prd.md`](./20-mvp-prd.md) | `BLOCKED`：等待两个独立 Gate 的最终结果、必要 PRD 修订闭环及联合 Decision Record | `NOT_EVALUATED` | WWA、实施计划和生产 Schema/API 冻结保持 No-Go |
-| Product MVP WWA | 本文件第 7 节 | `BLOCKED` | 不适用 | 不得创建 `docs/pm/70-mvp-wwa-backlog.md` |
-
-`READY_TO_EXECUTE` 只表示协议或计划已经具备执行条件，不表示活动已开始、样本已招募、用例已运行或能力已经通过。
+`IN_PROGRESS` 不代表通过；只表示已经存在可引用的执行证据。
 
 ## 3. Product Validation 执行线
 
-### 建议分支
+### 执行分支
 
-```text
-validation/concierge-execution
-```
+`validation/concierge-execution`
 
-该名称是执行分支建议，本次文档治理不创建该分支。
+Draft PR：`#3 docs(validation): execute Product Validation evidence collection`
 
-### 协议与范围
+### 当前证据快照
 
-- 唯一执行协议：[`40-validation-protocol.md`](./40-validation-protocol.md)
-- 允许：低保真 A/B/C 对照、领域模型走查、Concierge Validation、复用审计和去敏证据整理；
-- 禁止：产品化入口、Project / Task UI、生产 Schema/API、产品 MVP WWA 和 Deferred 能力。
+`evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/`
 
-### 建议证据根目录
+当前事实：
 
-```text
-evidence/product-validation/<evidence_snapshot_id>/
-```
+- Nine Real Instances：9 / 9 frozen；
+- neutral mapping：9 / 9；
+- frozen first-nine fit：9 / 9 `natural_fit` for known facts；
+- supplemental adverse instances：1；
+- total fit：`natural_fit = 10`、`strained_fit = 0`、`model_break = 0`；
+- first-nine giant Task / special FK / ambiguous ownership / exception lifecycle：0 / 0 / 0 / 0；
+- strict distinct actual trajectory：**1 / required 6**；
+- actual trajectory IDs：`TR-09`；
+- Founder signal：`STRONG_SIGNAL_SUPPORTING_ONLY`；
+- external participants：0 / 3；
+- external real problems：0 / 5；
+- independent qualifying reuse users：0 / 2；
+- Product Validation Gate Final：`NOT_RECORDED`。
 
-建议目录：
+### 已成立的 adverse trajectory
 
-```text
-evidence/product-validation/<evidence_snapshot_id>/
-├── manifest.json
-├── protocol-lock.json
-├── entry-comparison/
-├── domain-walkthrough/
-├── concierge/
-├── reuse-audit/
-└── decisions/
-    ├── project-native-decision.md
-    ├── task-first-decision.md
-    ├── task-aggregation-decision.md
-    └── product-validation-gate-decision.md
-```
+`TR-09`：Orbis Plan 40B delivery-integrity failure/recovery。
 
-目录结构是研究证据组织约定，不是生产 Artifact Schema。参与者身份映射、未去敏仓库内容、录屏、凭据和生产数据不得进入公开仓库；公开分支只保留允许公开的去敏索引、哈希、协议版本和 Decision Record。
+核心事实：PR #16 已验证且记录 merge，但因仍指向 stacked base，目标 `main` 没有收到 Plan 40B；后续 #18/#19 使用相同 validated head 重新建立 main-targeted delivery，最终 #19 merge。历史 acceptance 不被重写，只单独表达 `delivery_integrity: failed → restored`。
 
-### 必需 Decision Record
+证据：
 
-| Decision Record | 允许结论 | 当前状态 | 证据引用 |
-|---|---|---|---|
-| Project-native | `Keep / Modify / Remove` | `NOT_RECORDED` | — |
-| Task-first | `Keep / Modify / Remove` | `NOT_RECORDED` | — |
-| Task Aggregation | `Keep / Modify / Remove` | `NOT_RECORDED` | — |
-| Product Validation Gate | `PASS / CONTINUE_VALIDATION / FAIL_AND_REVISE` | `NOT_RECORDED` | — |
+`evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/domain-walkthrough/S01-ORBIS-PLAN40B-DELIVERY-INTEGRITY.yaml`
+
+### 历史搜索截止
+
+已保存：
+
+`evidence/product-validation/pv-2026-09-01-real-instance-freeze-v1/domain-walkthrough/trajectory-gap-audit-2026-09-03.md`
+
+截至 2026-09-03，当前可访问历史资料已无法诚实补出第二条完整 `actual_end_to_end` trajectory。已审计并明确排除：
+
+- Orbis PR #4：supersede/abandonment ≠ Review Reject / Agent Cancel；
+- `sooperset/mcp-atlassian#1404`：author-requested close ≠ Review Reject；
+- GitHub Actions Issue #23：真实 pre-checkout zero-step failure，但属于 remote hosted runner，不满足当前 local-runner/local-Workspace TR-06；
+- `easy-yapi` upstream sync：存在两个 repository reference，但实际 change/delivery 只归属 fork，不满足 TR-08；
+- Hermes/Desktop cwd 历史：缺少绑定具体真实代码任务、错误 Workspace 与成功 retry 的完整 raw chain；
+- `learn-claude-code` default-branch commits：无法建立用户归属 + no-Task start 两项必要事实；
+- user-authored `review:changes_requested` PR 搜索：无 qualifying TR-03 历史案例；
+- Technical Validation hostile/fault-injection：默认不回填 Product real-work evidence。
+
+因此历史 broad search 视为对当前资料 **saturated**。后续计数增长必须来自新发现的完整历史 raw source，或自然发生并 prospectively capture 的 founder/external real code work。
+
+### 独立 Decision Record
+
+| Decision Record | 允许 Final 结论 | 当前状态 |
+|---|---|---|
+| Project-native | `Keep / Modify / Remove` | `NOT_RECORDED` |
+| Task-first | `Keep / Modify / Remove` | `NOT_RECORDED` |
+| Task Aggregation | `Keep / Modify / Remove` | **Draft `CONTINUE_VALIDATION`**：9/9 frozen first-nine natural + S01 TR-09；trajectory 1/6 |
+| Product Validation Gate | `PASS / CONTINUE_VALIDATION / FAIL_AND_REVISE` | **Draft `CONTINUE_VALIDATION`；Final `NOT_RECORDED`** |
+
+### Active Product Validation work
+
+- Issue #9 `VAL-01`：再补 5 个不同的真实 `actual_end_to_end` trajectory，并 Finalize Task Aggregation。
+- Issue #11 `VAL-02`：招募 P01..P03，执行 5 个外部真实问题、A↔B / B↔C、14 天无提醒 reuse audit。
+- Issue #37 `VAL-01A`：对 TR-03/TR-04/TR-06/TR-07/TR-08 等进行 **prospective real-work capture**，不再用弱历史 near-match 凑数。
+- Issue #38 `VAL-02A`：寻找一名真实外部 P01 候选，但不降低 qualification / consent 标准。
+- Issue #24：**已关闭**；Founder P00 仅完成 structural research-kit rehearsal，未收集独立 live behavior，贡献 0 external / reuse / Gate evidence。
+
+### 证据纪律
+
+- CI checkpoint 是 Verification Event，不自动等于 Agent Run。
+- `unknown` 不得转换成支持证据。
+- 失败、Cancel、Reject、Supersede 不能因结果不利而从样本删除。
+- Counterfactual 不计入 6 条 actual trajectory。
+- Technical Validation fault injection 默认不得回填 Product Validation。
+- Founder 不计 external participant / qualifying reuse。
+- Historical acceptance / Review fact 与 delivery integrity 分离；后续 delivery failure 不回写历史决定。
+- 历史搜索达到截止后，不因 Gate 压力重新解释已排除 near-match。
 
 ## 4. Technical Validation 执行线
 
-### 建议分支
+执行分支：`spike/milestone-0-harness`
 
-```text
-spike/milestone-0-harness
-```
+Technical Validation 保持独立。Product Gate 的进展、Founder 证据和 first-nine fit 都不能抵消 Technical Gate 的 FAIL / INCONCLUSIVE；反之亦然。
 
-该名称是执行分支建议，本次文档治理不创建该分支。
-
-### 协议与范围
-
-- 唯一执行计划：[`50-milestone-0-experiment-plan.md`](./50-milestone-0-experiment-plan.md)
-- 允许：disposable fixture、诊断 Harness、四个独立 Spike、故障注入、重放、reconciliation 和证据采集；
-- 禁止：产品 UI、通用 Workflow、多 Runtime、Sandbox、Session Resume、Remote Runner 和其他 Deferred 能力。
-
-### 证据根目录
-
-沿用实验计划已经定义的目录：
-
-```text
-evidence/milestone-0/<experiment_run_id>/
-├── manifest.json
-├── spike-1-runner/
-├── spike-2-codex-adapter/
-├── spike-3-change-package/
-├── spike-4-artifact-durability/
-├── cross-contracts/
-│   ├── repository-identity/
-│   ├── trusted-local/
-│   ├── verification-invocation/
-│   └── resource-reconciliation/
-└── technical-gate-decision.md
-```
-
-### 必需独立结论
-
-| 技术决策单元 | 允许结论 | 当前状态 | 证据引用 |
-|---|---|---|---|
-| Spike 1 — Runner-owned process containment / Cancel | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-| Spike 2 — Real Codex Adapter capability | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-| Spike 3 — Change Package seal / replay | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-| Spike 4 — Artifact durability / fault injection / reconciliation | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-| Cross-cutting contracts | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-| Technical Gate | `PASS / FAIL / INCONCLUSIVE` | `NOT_RECORDED` | — |
-
-任一关键 case 未运行、证据缺失或结果无法解释，都必须保留为 `INCONCLUSIVE`；不能用其他 Spike 的成功抵消。
-
+Technical Gate 仍需依据 `50-milestone-0-experiment-plan.md` 完成独立 Spike、跨切合同和 Final Decision Record。
 
 ## 5. 联合 Gate Decision Record
 
-两个独立 Gate 都形成 Final Decision Record 后，还必须生成一份联合决策记录，用于检查“合取门槛”而不是重新评判各自证据：
+只有 Product Validation Gate 与 Technical Gate 都形成 Final Decision Record 后，才允许生成：
 
-```text
-evidence/gates/<joint_gate_id>/product-and-technical-gate-decision.md
-```
+`evidence/gates/<joint_gate_id>/product-and-technical-gate-decision.md`
 
-该记录至少引用：
-
-- 最终 Product Validation Gate Decision Record；
-- 最终 Technical Gate Decision Record；
-- 所有 `Modify / Remove` 对应的 PRD 修订与重新评审记录；
-- 两个 Gate 使用的协议、计划、证据快照和内容哈希；
-- 联合结论：`PASS / BLOCKED`。
-
-联合记录不能把一个 Gate 的成功用于覆盖另一个 Gate 的失败、未运行或 `INCONCLUSIVE`。只有两个独立 verdict 都为 `PASS` 且 PRD 修订闭环完成时，联合结论才允许为 `PASS`。
+联合记录只检查合取条件，不能重新解释或抵消单独 Gate 的失败/未运行。
 
 ## 6. 当前被阻断的产品工作
 
 | 工作 | 当前状态 | 解锁条件 |
 |---|---|---|
-| 产品 MVP WWA 拆解 | `BLOCKED` | 第 7 节全部条件满足 |
+| 产品 MVP WWA 拆解 | `BLOCKED` | 两个独立 Gate PASS + PRD 修订闭环 + joint Final |
 | 完整 MVP Implementation Plan | `BLOCKED` | `70-mvp-wwa-backlog.md` 生成并通过评审 |
-| Project / Task 产品化 UI | `BLOCKED` | 联合 Gate 通过，并且门控后 PRD 仍保留该入口与范围 |
-| Task 中心生产 Schema、API、导航和生命周期 | `BLOCKED` | Task Aggregation 最终决策及联合 Gate 支持，必要 PRD 修订完成 |
-| 通用 WorkflowDefinition、YAML / DAG、Workflow Canvas | `DEFERRED` | 出现真实第二流程、改序或复用证据后另行立项 |
-| 多 Runtime、Sandbox、Session Resume、Remote Runner 等 | `DEFERRED` | 不由本轮 Gate 自动解锁；需要独立真实证据和新范围决策 |
+| Project / Task 产品化 UI | `BLOCKED` | 联合 Gate 通过且门控后 PRD 仍保留该入口 |
+| Task 中心生产 Schema/API/导航/生命周期 | `BLOCKED` | Task Aggregation Final + 联合 Gate 支持 |
+| 通用 WorkflowDefinition / Canvas | `DEFERRED` | 独立真实复用/第二流程证据 |
+| 多 Runtime / Sandbox / Session Resume / Remote Runner | `DEFERRED` | 独立真实证据与新范围决策 |
 
-## 7. WWA 解锁规则与编号
+## 7. WWA 解锁规则
 
-旧路径 `docs/pm/40-wwa-backlog.md` 已废弃。编号现已固定为：
-
-```text
-40 = Product Validation Protocol
-50 = Milestone 0 Experiment Plan
-60 = Gate Execution Index
-70 = 门控后的 Product MVP WWA Backlog
-```
-
-只有以下逻辑表达式为真，才允许把 WWA 状态改为 `UNLOCKED`：
+只有以下表达式为真：
 
 ```text
 wwa_unlocked =
@@ -180,43 +147,28 @@ wwa_unlocked =
   AND joint_gate_decision_record.final == true
 ```
 
-解锁后才允许：
-
-1. 将本文件中的 Product + Technical Gate 更新为 `PASS`；
-2. 将 Product MVP WWA 更新为 `UNLOCKED`；
-3. 运行 `wwas`；
-4. 创建 `docs/pm/70-mvp-wwa-backlog.md`；
-5. 在 WWA 评审通过后进入 Implementation Plan 与 Coding。
-
-以下情况都不能解锁 WWA：
-
-- Product Validation Gate 为 `CONTINUE_VALIDATION` 或 `FAIL_AND_REVISE`；
-- Technical Gate 为 `FAIL` 或 `INCONCLUSIVE`；
-- 任一 Gate 尚未形成最终 Decision Record；
-- 联合 Product + Technical Gate Decision Record 尚未形成 Final 记录；
-- `Modify / Remove` 后果尚未回写 PRD；
-- 受影响 PRD 边界尚未重新评审；
-- 只有口头确认、未引用原始证据或未运行关键用例。
+才允许运行 `wwas` 并创建 `docs/pm/70-mvp-wwa-backlog.md`。
 
 ## 8. 更新纪律
 
-每次执行线更新本索引时必须：
+每次状态更新必须：
 
-1. 记录执行分支、基线 commit、协议或计划内容哈希；
-2. 只引用已保存、可审计的证据和 Final Decision Record；
-3. 将判据、事实、解释和 verdict 分开记录；
-4. 对未运行、被排除、混杂或证据缺失的 case 明确标记；
-5. 不在本索引中复制敏感原始证据；
-6. 不以 Product Gate 的结果替代 Technical Gate，反之亦然；
-7. 不把 Gate 通过、有限产品化投资或 MVP 构建完成表述为市场验证完成。
+1. 引用已保存、可审计的 evidence snapshot / Final Decision Record；
+2. 将判据、事实、解释和 verdict 分开；
+3. 未运行、被排除、混杂、unknown 必须显式标记；
+4. 不复制敏感原始证据到公开记录；
+5. Product 与 Technical Gate 互不替代；
+6. Gate PASS 不表述为市场验证完成。
 
-## 9. 下一次允许的状态变化
+## 9. 下一次允许的 Product 状态变化
 
-当前只允许把以下条目从 `NOT_RECORDED` 更新为有证据支持的执行中状态或最终结论：
+当前 Product Validation 下一次合法变化仅包括：
 
-- Product Validation 的四份 Decision Record；
-- Technical Validation 的四个 Spike、跨切合同与 Technical Gate；
-- 必要 PRD 修订及重新评审记录；
-- Product + Technical Gate 的联合 Decision Record。
+- `actual_end_to_end` trajectory 从 1 增加到有新真实证据支持的计数；
+- P01..P03 由真实 Qualification 产生；
+- 外部真实问题与 A/B/C observation 被记录；
+- qualifying reuse 经双评审通过；
+- 三份独立 Product Decision Record 进入 Final；
+- 最后才评估 Product Validation Gate Final。
 
-在这些记录闭环之前，Product + Technical Gate 与 Product MVP WWA 必须保持 `BLOCKED`。
+在这些记录闭环之前，Product MVP WWA 必须保持 `BLOCKED`。

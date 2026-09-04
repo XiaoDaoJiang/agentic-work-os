@@ -1,0 +1,29 @@
+instance_id: ORBIS-PR-8
+source_date: 2026-08-31T08:05:04Z
+selection_rule_position: I07
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/8
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33368720907
+    observed_outcome: failed
+    evidence: final artifact gate failed because the archive index did not yet exist
+  - checkpoint_id: gha-33369396754
+    observed_outcome: succeeded
+    evidence: frozen install, Path Guard, schema/content validation, multi-presentation integration, build and discovery checks green
+  - checkpoint_id: gha-33369465477
+    observed_outcome: succeeded
+    evidence: trusted publisher downloaded the exact artifact, published preview-pr-8 and passed public HTTP smoke
+workspace_ownership: "repository branch feat/archive-discovery-indexes is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR/build/publish checkpoints are uniquely attributable to PR #8; coding-agent native events are not public"
+artifact_ownership: "artifact 9749475407 and preview-pr-8 are uniquely attributable to PR #8"
+review_decision_ownership: "GitHub merge decision for PR #8; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

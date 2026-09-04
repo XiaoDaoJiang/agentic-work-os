@@ -1,0 +1,29 @@
+instance_id: ORBIS-PR-10
+source_date: 2026-08-31T09:04:27Z
+selection_rule_position: I05
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/10
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33375128804
+    observed_outcome: failed
+    evidence: final site-check failed because the old homepage lacked the new latest-brief section
+  - checkpoint_id: gha-33375310407
+    observed_outcome: succeeded
+    evidence: full build pipeline and homepage discovery boundary checks green
+  - checkpoint_id: gha-33375395454
+    observed_outcome: succeeded
+    evidence: trusted publisher verified artifact digest, published preview and passed public availability smoke
+workspace_ownership: "repository branch feat/home-discovery-experience is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR/build/publish checkpoints are uniquely attributable to PR #10; coding-agent native events are not public"
+artifact_ownership: "final artifact 9751652494 and preview-pr-10 are uniquely attributable to PR #10"
+review_decision_ownership: "GitHub merge decision for PR #10; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null

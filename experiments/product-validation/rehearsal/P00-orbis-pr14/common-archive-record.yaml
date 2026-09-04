@@ -1,0 +1,39 @@
+archive_contract_version: pv-archive-v0
+classification: REHEARSAL_ONLY
+participant_id: P00-founder-rehearsal
+real_problem_id: ORBIS-PR-14
+population_mode: wizard_of_oz_historical_reconstruction
+user_extra_data_entry_required: false
+project_ref: XiaoDaoJiang/Orbis
+run_ref: historical-work-slice/ORBIS-PR-14
+observed_at: 2026-09-01T03:17:56Z..2026-09-01T03:57:12Z
+cwd: unknown_public_evidence
+objective_or_prompt_snapshot_ref: https://github.com/XiaoDaoJiang/Orbis/pull/14
+objective_or_prompt_snapshot_hash: public-pr-body-at-rehearsal-freeze
+agent_output_ref: unknown_public_evidence
+diff_ref: https://github.com/XiaoDaoJiang/Orbis/pull/14/files
+verification_invocation_ref:
+  - github-actions-run:33465703923
+  - github-actions-run:33465780926
+  - github-actions-run:33465986406
+  - github-actions-run:33466065425
+verification_result_ref:
+  - RED: weekly-v1 renderer missing
+  - GREEN: renderer + Registry contract green while Weekly remained disabled
+  - RED: mixed integration required published weekly-v1 seed
+  - GREEN: final Daily + Weekly + Talk integration, artifact and discovery checks green
+change_package_ref:
+  artifact_id: 9784902857
+  sha256: cfc6590063a697323ec940ae5052ee96fe4b654383ebe259bd0681b1dcc1886b
+  head_sha: edd84cb83fd88d7cde2257b8a804f9f6164b061e
+review_fact_ref:
+  final_repository_decision: merged
+  merged_at: 2026-09-01T03:57:12Z
+  independent_submitted_review: not_claimed
+  trusted_preview: https://raw.githack.com/XiaoDaoJiang/Orbis/preview-pr-14/index.html
+parity_rule: "This exact record is the participant-visible archive payload for both rehearsal Variant B and Variant C. Variant C may add only the pre-start minimal Task card."
+unknowns:
+  - native Codex session/run identity
+  - original local cwd/workspace path
+  - original terminal transcript
+  - original time-to-start

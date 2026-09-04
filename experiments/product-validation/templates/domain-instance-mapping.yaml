@@ -1,0 +1,25 @@
+instance_id: null
+source_date: null
+selection_rule_position: null
+raw_timeline_ref: null
+repository_count: null
+objective_and_dod_owner: unknown
+run_attempts: []
+workspace_ownership: unknown
+session_ownership: unknown
+event_ownership: unknown
+artifact_ownership: unknown
+review_decision_ownership: unknown
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null
+# trajectory_evidence item shape:
+# - trajectory_id: TR-01
+#   evidence_mode: actual_end_to_end | counterfactual
+#   instance_id: I01
+#   raw_evidence_ref: ...

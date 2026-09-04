@@ -1,0 +1,43 @@
+instance_id: ORBIS-PLAN40B-DELIVERY-INTEGRITY
+source_date: 2026-09-01T08:55:06Z
+selection_rule_position: supplemental
+supplemental_reason: "Adds a real adverse delivery-integrity trajectory not present in the frozen first nine; does not replace I01..I09."
+raw_timeline_refs:
+  - https://github.com/XiaoDaoJiang/Orbis/pull/16
+  - https://github.com/XiaoDaoJiang/Orbis/pull/18
+  - https://github.com/XiaoDaoJiang/Orbis/pull/19
+repository_count: 1
+objective_and_dod_owner: "Plan 40B work objective preserved across stacked delivery and main-targeted recovery"
+observed_sequence:
+  - step: validated_change_package
+    evidence: "PR #16 final head 56a89d2259b0489a61ca2a867a06740f5c2de2eb passed final stacked build 33482448121 and produced artifact 9790487685 plus trusted preview."
+  - step: repository_acceptance
+    evidence: "PR #16 was merged at 2026-09-01T07:40:57Z while still targeting stacked base feat/source-author-registry-integrity."
+  - step: delivery_integrity_failure_discovered
+    evidence: "After merge, Plan 40B commits were not delivered to intended target main; PR #18 explicitly records this fact and reuses the exact validated head against main."
+  - step: recovery_attempt_1
+    evidence: "PR #18 retargeted exact head to main and passed fresh build 33484921932 with artifact 9791410944 and trusted preview, but remained Draft and could not be merged because the connector Ready-for-review mutation was incompatible with the current GitHub schema."
+  - step: recovery_attempt_2
+    evidence: "PR #19 superseded #18, carried the exact same validated Plan 40B head to main as a non-Draft PR, and merged at 2026-09-01T08:55:06Z."
+history_preservation: "PR #16 remains historically merged/accepted. The later failure is represented as target-delivery integrity failure; the #16 decision is not rewritten to Reject/failed."
+delivery_integrity_projection: "intended_target_main: missing_after_pr16_merge -> restored_via_pr19"
+workspace_ownership: "repository branch identity is observable; local Workspace lifecycle remains unknown"
+session_ownership: unknown
+event_ownership: "PR #16/#18/#19 SCM and CI events are attributable; native Coding Agent events remain unknown"
+artifact_ownership: "PR #16 artifact/preview remain valid historical evidence; PR #18/#19 provide independent main-targeted delivery evidence"
+review_decision_ownership: "repository acceptance of #16 remains immutable; later delivery repair does not retroactively change it"
+trajectory_evidence:
+  - trajectory_id: TR-09
+    evidence_level: actual_end_to_end
+    rationale: "A validated and repository-accepted change was later found absent from the intended delivery target. Historical acceptance was preserved; only delivery integrity changed, and recovery used new delivery attempts until main integration succeeded."
+fit_classification: natural_fit
+giant_task_required: false
+special_fk_required: false
+ambiguous_ownership: false
+exception_lifecycle_required: false
+alternative_aggregate: null
+reviewer_disagreement: null
+limitations:
+  - "This is SCM/delivery-integrity evidence, not native Agent Workspace corruption."
+  - "No native Agent Run or Session identity is available."
+  - "PR #18 draft/connector failure is not independently counted as TR-03/TR-04/TR-06."

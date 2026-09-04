@@ -1,0 +1,29 @@
+instance_id: ORBIS-PR-12
+source_date: 2026-08-31T10:36:28Z
+selection_rule_position: I03
+raw_timeline_ref: https://github.com/XiaoDaoJiang/Orbis/pull/12
+repository_count: 1
+objective_and_dod_owner: pull_request_scope_and_approved_plan
+run_attempts:
+  - checkpoint_id: gha-33380601993
+    observed_outcome: failed
+    evidence: standalone Presentation schema capability missing after existing baseline contracts passed
+  - checkpoint_id: gha-33381670125
+    observed_outcome: failed
+    evidence: safety contract detected raw executable HTML in Talk frontmatter title
+  - checkpoint_id: gha-33381790673
+    observed_outcome: succeeded
+    evidence: final full build, mixed-source integration, negative gates and artifact upload green
+workspace_ownership: "repository branch feat/standalone-presentations-talk-v1 is unique; local workspace lifecycle is not observable in public evidence"
+session_ownership: unknown
+event_ownership: "PR and GitHub Actions checkpoints are uniquely attributable to PR #12; coding-agent native events are not public"
+artifact_ownership: "final artifact 9754045660 and preview-pr-12 are uniquely attributable to PR #12"
+review_decision_ownership: "GitHub merge decision for PR #12; no independent submitted code review is claimed"
+trajectory_evidence: []
+fit_classification: null
+giant_task_required: null
+special_fk_required: null
+ambiguous_ownership: null
+exception_lifecycle_required: null
+alternative_aggregate: null
+reviewer_disagreement: null
