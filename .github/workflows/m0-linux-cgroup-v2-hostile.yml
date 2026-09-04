@@ -1,0 +1,154 @@
+name: M0 Linux cgroup-v2 hostile containment
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/m0-linux-cgroup-v2-hostile.yml
+      - experiments/milestone-0/cgroup-v2/**
+      - experiments/milestone-0/native-runner/**
+      - experiments/milestone-0/scripts/run-processkit-hostile-matrix.mjs
+      - experiments/milestone-0/fixtures/**
+      - experiments/milestone-0/hostile-scenarios/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROCESSKIT_VERSION: "3.3.4"
+  NODE_VERSION: "22.16.0"
+  RUST_VERSION: "1.88.0"
+
+jobs:
+  cgroup-v2-hostile:
+    name: Delegated cgroup-v2 hostile matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build pinned disposable experiment image
+        shell: bash
+        run: |
+          docker build \
+            --build-arg NODE_VERSION="${NODE_VERSION}" \
+            --build-arg RUST_TOOLCHAIN="${RUST_VERSION}" \
+            --tag agentic-m0-cgroup-v2:local \
+            --file experiments/milestone-0/cgroup-v2/Dockerfile \
+            .
+
+      - name: Run frozen matrix with cgroup-v2 hard precondition
+        shell: bash
+        run: |
+          mkdir -p experiments/milestone-0/evidence/processkit-hostile-cgroup-v2
+
+          docker run --rm \
+            --privileged \
+            --cgroupns=private \
+            --volume "${GITHUB_WORKSPACE}:/work" \
+            --workdir /work/experiments/milestone-0 \
+            --env PROCESSKIT_VERSION="${PROCESSKIT_VERSION}" \
+            --env NODE_VERSION="${NODE_VERSION}" \
+            --env RUST_VERSION="${RUST_VERSION}" \
+            agentic-m0-cgroup-v2:local \
+            bash -lc '
+              set -euo pipefail
+
+              evidence_dir="$PWD/evidence/processkit-hostile-cgroup-v2"
+              mkdir -p "$evidence_dir"
+
+              {
+                echo "node=$(node --version)"
+                echo "rustc=$(rustc --version)"
+                echo "cargo=$(cargo --version)"
+                echo "kernel=$(uname -srmo)"
+                echo "cgroup_self=$(cat /proc/self/cgroup)"
+                echo "cgroup_mount=$(mount | grep " on /sys/fs/cgroup " || true)"
+                echo "cgroup_controllers=$(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || true)"
+                echo "cgroup_writable=$(test -w /sys/fs/cgroup && echo true || echo false)"
+              } > "$evidence_dir/environment.txt"
+
+              test "$(node --version)" = "v${NODE_VERSION}"
+              rustc --version | grep -F "rustc ${RUST_VERSION}"
+              test -f /sys/fs/cgroup/cgroup.controllers
+
+              expected="processkit = \"=${PROCESSKIT_VERSION}\""
+              grep -F "$expected" native-runner/Cargo.toml
+              cargo metadata --locked --manifest-path native-runner/Cargo.toml --format-version 1 --no-deps > /dev/null
+              cargo build --locked --release --manifest-path native-runner/Cargo.toml --bin hostile-probe
+
+              probe="$PWD/native-runner/target/release/hostile-probe"
+              node_executable="$(command -v node)"
+              preflight_root="$evidence_dir/preflight-root"
+              rm -rf "$preflight_root"
+              mkdir -p "$preflight_root"
+
+              preflight="$($probe \
+                --node "$node_executable" \
+                --fixture "$PWD/fixtures/hostile-process.mjs" \
+                --scenario "$PWD/hostile-scenarios/tree-hang.json" \
+                --root "$preflight_root" \
+                --trigger cancel \
+                --trigger-ms 250 \
+                --post-stop-ms 750 \
+                --sample-ms 50 \
+                --seed 7 \
+                --repetition 0)"
+
+              printf "%s\n" "$preflight" > "$evidence_dir/preflight.json"
+
+              node - "$evidence_dir/preflight.json" <<"NODE"
+              const fs = require("node:fs");
+              const summary = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+              if (summary.actual_mechanism !== "cgroup_v2") {
+                console.error(`CgroupV2PreconditionError: expected cgroup_v2, got ${summary.actual_mechanism}`);
+                process.exit(2);
+              }
+              console.log(`cgroup-v2 preflight confirmed: ${summary.actual_mechanism}`);
+              NODE
+
+              rm -rf "$preflight_root"
+
+              node scripts/run-processkit-hostile-matrix.mjs \
+                --mode race \
+                --probe "$probe" \
+                --node "$node_executable" \
+                --fixture "$PWD/fixtures/hostile-process.mjs" \
+                --scenario-dir "$PWD/hostile-scenarios" \
+                --output-dir "$evidence_dir/matrix"
+
+              node - "$evidence_dir/matrix/matrix-summary.json" <<"NODE"
+              const fs = require("node:fs");
+              const summary = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+              const mechanisms = summary.actual_mechanisms ?? [];
+              if (summary.run_count !== 200) {
+                console.error(`FrozenMatrixError: expected 200 runs, got ${summary.run_count}`);
+                process.exit(3);
+              }
+              if (summary.harness_status !== "PASS") {
+                console.error(`FrozenMatrixError: harness status is ${summary.harness_status}`);
+                process.exit(4);
+              }
+              if (mechanisms.length !== 1 || mechanisms[0] !== "cgroup_v2") {
+                console.error(`CgroupV2PreconditionError: matrix mechanisms=${JSON.stringify(mechanisms)}`);
+                process.exit(5);
+              }
+              console.log(JSON.stringify({
+                run_count: summary.run_count,
+                harness_status: summary.harness_status,
+                actual_mechanisms: mechanisms,
+                scenario_verdict_counts: summary.scenario_verdict_counts
+              }));
+              NODE
+            '
+
+      - name: Upload raw cgroup-v2 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: processkit-hostile-evidence-linux-cgroup-v2
+          path: experiments/milestone-0/evidence/processkit-hostile-cgroup-v2/**
+          if-no-files-found: warn
+          retention-days: 14
