@@ -33,8 +33,9 @@ fn require_parallel_linux_hostile_evidence(summary: HostileProbeSummary) {
 
 #[test]
 fn hostile_summary_contract_keeps_raw_and_prospective_linux_facts_separate() {
-    // This is intentionally a compile-time integration contract. The RED state is
-    // the existing HostileProbeSummary not yet exposing the prospective Linux
-    // final-window fields above. No historical raw field is removed to make it pass.
-    assert!(true);
+    // The function body above is the compile-time contract: all historical and
+    // prospective Linux fields must coexist on HostileProbeSummary. Keep an
+    // explicit function reference here so this test remains intentional without
+    // relying on a constant assertion that Clippy correctly rejects.
+    let _contract: fn(HostileProbeSummary) = require_parallel_linux_hostile_evidence;
 }
