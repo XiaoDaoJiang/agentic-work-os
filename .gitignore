@@ -1,0 +1,5 @@
+# Validation and Milestone 0 raw evidence is local-only unless explicitly redacted.
+evidence/
+
+# Experiment-local transient files.
+experiments/**/.tmp/

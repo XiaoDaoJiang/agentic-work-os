@@ -1,0 +1,85 @@
+{
+  "schema": "containment-provider-selection-v0",
+  "issue": 8,
+  "status": "SELECTED_FOR_NEXT_EXPERIMENT",
+  "evidence": {
+    "workflow_run_id": 33477288678,
+    "head_sha": "3fd080b5c44bced9b71a1f32beec38d31ab0d3e4",
+    "artifacts": {
+      "windows-2025": 9788679764,
+      "ubuntu-24.04": 9788642652,
+      "macos-15": 9788627411
+    }
+  },
+  "decisions": [
+    {
+      "candidate": "processkit",
+      "version": "3.3.4",
+      "license": "MIT",
+      "verdict": "Select",
+      "role": "primary candidate for hostile-process containment tests"
+    },
+    {
+      "candidate": "process-wrap",
+      "version": "10.0.0",
+      "license": "Apache-2.0 OR MIT",
+      "verdict": "Modify",
+      "role": "narrow wrapper/reference alternative requiring project-owned lifecycle and observability additions"
+    },
+    {
+      "candidate": "direct-os",
+      "version": "project-owned",
+      "license": "project-owned",
+      "verdict": "Reject",
+      "role": "fallback and diagnostic baseline only"
+    }
+  ],
+  "platform_facts": {
+    "windows-2025": {
+      "platform": "windows",
+      "architecture": "x86_64",
+      "processkit_mechanism": "job_object",
+      "processkit_mechanism_source": "runtime_created_group",
+      "processkit_membership_observable": true,
+      "processkit_owner_exit_cleanup_scope": "whole_tree",
+      "process_wrap_mechanism": "job_object",
+      "process_wrap_spawn_ok": true
+    },
+    "ubuntu-24.04": {
+      "platform": "linux",
+      "architecture": "x86_64",
+      "processkit_mechanism": "process_group",
+      "processkit_mechanism_source": "runtime_created_group",
+      "processkit_membership_observable": true,
+      "processkit_owner_exit_cleanup_scope": "direct_child_only",
+      "process_wrap_mechanism": "process_group",
+      "process_wrap_spawn_ok": true
+    },
+    "macos-15": {
+      "platform": "macos",
+      "architecture": "aarch64",
+      "processkit_mechanism": "process_group",
+      "processkit_mechanism_source": "runtime_created_group",
+      "processkit_membership_observable": true,
+      "processkit_owner_exit_cleanup_scope": "none",
+      "process_wrap_mechanism": "process_group",
+      "process_wrap_spawn_ok": true
+    }
+  },
+  "non_claims": {
+    "spike_1_pass": false,
+    "technical_gate_pass": false,
+    "real_codex_authorized": false,
+    "production_provider_frozen": false
+  },
+  "next_required_evidence": [
+    "hostile root and descendant termination",
+    "root exits before descendants",
+    "session/process-group escape attempts",
+    "timeout and explicit cancel teardown",
+    "duplicate cancel and cancel/natural-exit races",
+    "stdout/stderr drain and post-stop late-write observation",
+    "final membership and zero-survivor evidence",
+    "frozen race-case repeat count"
+  ]
+}
