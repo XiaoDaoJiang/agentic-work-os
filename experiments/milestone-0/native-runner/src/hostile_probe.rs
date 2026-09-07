@@ -17,6 +17,12 @@ use tokio::time;
 use crate::hostile_evidence::{
     HostileEvidence, HostileVerdict, evaluate_physical_verdict, record_cleanup_outcome,
 };
+use crate::linux_observer::{
+    LinuxObserverSample, LinuxObserverSummary, reduce_linux_observer_samples,
+};
+use crate::linux_process_truth::{LinuxProcessTruth, LinuxTruthVerdict};
+#[cfg(target_os = "linux")]
+use crate::linux_process_truth::{classify_linux_process_truth, observe_linux_process_truth};
 use crate::runtime_receipt::OwnershipMarkers;
 use crate::windows_observer::{
     WindowsObserverSample, WindowsObserverSummary, reduce_windows_observer_samples,
@@ -224,6 +230,18 @@ pub struct WindowsTruthSample {
     pub truth_verdict: WindowsTruthVerdict,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LinuxTruthSample {
+    pub observation_sample_index: u32,
+    pub final_snapshot: bool,
+    pub pid: u32,
+    pub expected_start_time: Option<u64>,
+    pub processkit_alive: Option<bool>,
+    pub cgroup_member: Option<bool>,
+    pub linux_truth: LinuxProcessTruth,
+    pub truth_verdict: LinuxTruthVerdict,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HostileProbeSummary {
     pub schema: &'static str,
@@ -240,6 +258,13 @@ pub struct HostileProbeSummary {
     pub members_after: Vec<u32>,
     pub fixture_pids: Vec<u32>,
     pub survivor_pids: Vec<u32>,
+    pub members_observed_during_window: Vec<u32>,
+    pub final_members_after_window: Vec<u32>,
+    pub linux_truth_samples: Vec<LinuxTruthSample>,
+    pub final_active_original_pids: Vec<u32>,
+    pub final_zombie_original_pids: Vec<u32>,
+    pub final_reused_pids: Vec<u32>,
+    pub linux_observer_inconclusive_pids: Vec<u32>,
     pub executing_survivor_pids: Vec<u32>,
     pub observer_mismatch_pids: Vec<u32>,
     pub observer_inconclusive_pids: Vec<u32>,
@@ -288,6 +313,8 @@ struct ControlSnapshot {
 struct ObservationOutcome {
     members_after: Vec<u32>,
     survivor_pids: Vec<u32>,
+    members_observed_during_window: Vec<u32>,
+    linux_truth_samples: Vec<LinuxTruthSample>,
     windows_truth_samples: Vec<WindowsTruthSample>,
     observed_late_write: bool,
     observer_complete: bool,
@@ -428,11 +455,22 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
     )
     .await;
     let windows_observer_summary = summarize_windows_observer(&observation.windows_truth_samples);
+    let linux_observer_summary = summarize_linux_observer(&observation.linux_truth_samples);
     let observer_complete = fingerprint_ready
         && observation.observer_complete
-        && windows_observer_is_complete(&observation.survivor_pids, &windows_observer_summary);
-    let physical_survivor_pids =
-        prospective_physical_survivor_pids(&observation.survivor_pids, &windows_observer_summary);
+        && windows_observer_is_complete(&observation.survivor_pids, &windows_observer_summary)
+        && linux_observer_is_complete(
+            &fixture_pids,
+            &observation.linux_truth_samples,
+            &linux_observer_summary,
+        );
+    let physical_survivor_pids = prospective_physical_survivor_pids(
+        &observation.survivor_pids,
+        &windows_observer_summary,
+        &linux_observer_summary,
+    );
+    let physical_members_after =
+        prospective_physical_members_after(&observation.members_after, &linux_observer_summary);
     let control_parse_complete = observation.control_parse_complete;
     let teardown_error = if teardown_errors.is_empty() {
         None
@@ -450,7 +488,7 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         trigger: config.trigger.name().to_owned(),
         root_pid,
         members_before: members_before.clone(),
-        members_after: observation.members_after.clone(),
+        members_after: physical_members_after,
         fixture_pids: fixture_pids.iter().copied().collect(),
         survivor_pids: physical_survivor_pids,
         stdout_bytes,
@@ -488,6 +526,13 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         members_after: observation.members_after,
         fixture_pids: fixture_pids.into_iter().collect(),
         survivor_pids: observation.survivor_pids,
+        members_observed_during_window: observation.members_observed_during_window,
+        final_members_after_window: linux_observer_summary.final_members_after_window,
+        linux_truth_samples: observation.linux_truth_samples,
+        final_active_original_pids: linux_observer_summary.final_active_original_pids,
+        final_zombie_original_pids: linux_observer_summary.final_zombie_original_pids,
+        final_reused_pids: linux_observer_summary.final_reused_pids,
+        linux_observer_inconclusive_pids: linux_observer_summary.final_inconclusive_pids,
         executing_survivor_pids: windows_observer_summary.executing_survivor_pids,
         observer_mismatch_pids: windows_observer_summary.observer_mismatch_pids,
         observer_inconclusive_pids: windows_observer_summary.inconclusive_pids,
@@ -507,6 +552,55 @@ pub async fn run_probe(config: HostileProbeConfig) -> Result<HostileProbeSummary
         observation_errors,
         cleanup_errors,
     })
+}
+
+fn summarize_linux_observer(samples: &[LinuxTruthSample]) -> LinuxObserverSummary {
+    let during_window = samples
+        .iter()
+        .filter(|sample| !sample.final_snapshot)
+        .map(|sample| LinuxObserverSample {
+            pid: sample.pid,
+            processkit_alive: sample.processkit_alive,
+            cgroup_member: sample.cgroup_member,
+            linux_truth: sample.truth_verdict,
+        })
+        .collect::<Vec<_>>();
+    let final_snapshot = samples
+        .iter()
+        .filter(|sample| sample.final_snapshot)
+        .map(|sample| LinuxObserverSample {
+            pid: sample.pid,
+            processkit_alive: sample.processkit_alive,
+            cgroup_member: sample.cgroup_member,
+            linux_truth: sample.truth_verdict,
+        })
+        .collect::<Vec<_>>();
+    reduce_linux_observer_samples(&during_window, &final_snapshot)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_observer_is_complete(
+    fixture_pids: &BTreeSet<u32>,
+    samples: &[LinuxTruthSample],
+    summary: &LinuxObserverSummary,
+) -> bool {
+    if !summary.final_reused_pids.is_empty() || !summary.final_inconclusive_pids.is_empty() {
+        return false;
+    }
+    fixture_pids.iter().all(|pid| {
+        samples
+            .iter()
+            .any(|sample| sample.final_snapshot && sample.pid == *pid)
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_observer_is_complete(
+    _fixture_pids: &BTreeSet<u32>,
+    _samples: &[LinuxTruthSample],
+    _summary: &LinuxObserverSummary,
+) -> bool {
+    true
 }
 
 fn summarize_windows_observer(samples: &[WindowsTruthSample]) -> WindowsObserverSummary {
@@ -547,17 +641,44 @@ fn windows_observer_is_complete(
 #[cfg(windows)]
 fn prospective_physical_survivor_pids(
     _raw_survivor_pids: &[u32],
-    summary: &WindowsObserverSummary,
+    windows_summary: &WindowsObserverSummary,
+    _linux_summary: &LinuxObserverSummary,
 ) -> Vec<u32> {
-    summary.executing_survivor_pids.clone()
+    windows_summary.executing_survivor_pids.clone()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn prospective_physical_survivor_pids(
+    _raw_survivor_pids: &[u32],
+    _windows_summary: &WindowsObserverSummary,
+    linux_summary: &LinuxObserverSummary,
+) -> Vec<u32> {
+    linux_summary.final_active_original_pids.clone()
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn prospective_physical_survivor_pids(
     raw_survivor_pids: &[u32],
-    _summary: &WindowsObserverSummary,
+    _windows_summary: &WindowsObserverSummary,
+    _linux_summary: &LinuxObserverSummary,
 ) -> Vec<u32> {
     raw_survivor_pids.to_vec()
+}
+
+#[cfg(target_os = "linux")]
+fn prospective_physical_members_after(
+    _raw_members_after: &[u32],
+    linux_summary: &LinuxObserverSummary,
+) -> Vec<u32> {
+    linux_summary.final_members_after_window.clone()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prospective_physical_members_after(
+    raw_members_after: &[u32],
+    _linux_summary: &LinuxObserverSummary,
+) -> Vec<u32> {
+    raw_members_after.to_vec()
 }
 
 fn verdict_name(verdict: HostileVerdict) -> &'static str {
@@ -656,6 +777,50 @@ fn record_windows_truth_samples(
 ) {
 }
 
+#[cfg(target_os = "linux")]
+fn record_linux_truth_samples(
+    identities: &BTreeMap<u32, IdentityState>,
+    members: &[u32],
+    liveness: &BTreeMap<u32, bool>,
+    observation_sample_index: u32,
+    final_snapshot: bool,
+    samples: &mut Vec<LinuxTruthSample>,
+) {
+    let members = members.iter().copied().collect::<BTreeSet<_>>();
+    for (pid, state) in identities {
+        let expected_start_time = match state {
+            IdentityState::Anchored(anchor) => Some(anchor.start_time),
+            IdentityState::Gone => None,
+        };
+        let processkit_alive = liveness.get(pid).copied();
+        let cgroup_member = Some(members.contains(pid));
+        let linux_truth =
+            observe_linux_process_truth(*pid, expected_start_time, processkit_alive, cgroup_member);
+        let truth_verdict = classify_linux_process_truth(&linux_truth);
+        samples.push(LinuxTruthSample {
+            observation_sample_index,
+            final_snapshot,
+            pid: *pid,
+            expected_start_time,
+            processkit_alive,
+            cgroup_member,
+            linux_truth,
+            truth_verdict,
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn record_linux_truth_samples(
+    _identities: &BTreeMap<u32, IdentityState>,
+    _members: &[u32],
+    _liveness: &BTreeMap<u32, bool>,
+    _observation_sample_index: u32,
+    _final_snapshot: bool,
+    _samples: &mut [LinuxTruthSample],
+) {
+}
+
 fn required_path(values: &mut BTreeMap<String, OsString>, key: &str) -> Result<PathBuf, String> {
     values
         .remove(key)
@@ -749,14 +914,22 @@ async fn finish_drain(
     }
 }
 fn read_members(group: &ProcessGroup, label: &str, errors: &mut Vec<String>) -> Vec<u32> {
+    read_members_with_status(group, label, errors).0
+}
+
+fn read_members_with_status(
+    group: &ProcessGroup,
+    label: &str,
+    errors: &mut Vec<String>,
+) -> (Vec<u32>, bool) {
     match group.members() {
-        Ok(mut m) => {
-            m.sort_unstable();
-            m
+        Ok(mut members) => {
+            members.sort_unstable();
+            (members, true)
         }
-        Err(e) => {
-            errors.push(format!("{label}: {e}"));
-            Vec::new()
+        Err(error) => {
+            errors.push(format!("{label}: {error}"));
+            (Vec::new(), false)
         }
     }
 }
@@ -1027,7 +1200,9 @@ async fn observe_window(
 ) -> ObservationOutcome {
     let deadline = Instant::now() + duration;
     let mut observed_members = BTreeSet::new();
+    let mut members_observed_during_window = BTreeSet::new();
     let mut survivor_pids = BTreeSet::new();
+    let mut linux_truth_samples = Vec::new();
     let mut windows_truth_samples = Vec::new();
     let mut observation_sample_index = 0_u32;
     let mut observed_late_write = false;
@@ -1037,6 +1212,7 @@ async fn observe_window(
         best_effort_discover_control(control_file, fixture_pids, identities, true);
         let current_members = read_members(group, "post-stop members", errors);
         observed_members.extend(current_members.iter().copied());
+        members_observed_during_window.extend(current_members.iter().copied());
         let before_processkit =
             capture_windows_truth_before_processkit(identities, &current_members);
         let liveness = sample_pid_liveness(
@@ -1052,6 +1228,14 @@ async fn observe_window(
             &liveness,
             observation_sample_index,
             &mut windows_truth_samples,
+        );
+        record_linux_truth_samples(
+            identities,
+            &current_members,
+            &liveness,
+            observation_sample_index,
+            false,
+            &mut linux_truth_samples,
         );
         observation_sample_index = observation_sample_index.saturating_add(1);
         compare_file_fingerprint(
@@ -1076,7 +1260,8 @@ async fn observe_window(
     }
     let control_parse_complete =
         strict_finalize_control(control_file, fixture_pids, identities, errors);
-    let final_members = read_members(group, "final post-stop members", errors);
+    let (final_members, final_members_complete) =
+        read_members_with_status(group, "final post-stop members", errors);
     observed_members.extend(final_members.iter().copied());
     let final_before_processkit =
         capture_windows_truth_before_processkit(identities, &final_members);
@@ -1094,16 +1279,27 @@ async fn observe_window(
         observation_sample_index,
         &mut windows_truth_samples,
     );
+    record_linux_truth_samples(
+        identities,
+        &final_members,
+        &final_liveness,
+        observation_sample_index,
+        true,
+        &mut linux_truth_samples,
+    );
     let identity_complete = fixture_pids.iter().all(|pid| identities.contains_key(pid));
     ObservationOutcome {
         members_after: observed_members.into_iter().collect(),
         survivor_pids: survivor_pids.into_iter().collect(),
+        members_observed_during_window: members_observed_during_window.into_iter().collect(),
+        linux_truth_samples,
         windows_truth_samples,
         observed_late_write,
         observer_complete: control_parse_complete
             && identity_complete
             && liveness_complete
-            && fingerprint_complete,
+            && fingerprint_complete
+            && final_members_complete,
         control_parse_complete,
     }
 }
