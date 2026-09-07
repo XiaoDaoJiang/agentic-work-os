@@ -5,6 +5,10 @@
   "engines": { "node": ">=22.13" },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/*.mjs fixtures/*.mjs"
+    "test:cross-platform": "node --test test/local-runner-contract.test.mjs test/repository-marker-identity.test.mjs test/rust-runner-client.test.mjs",
+    "check": "node scripts/check-modules.mjs",
+    "test:rust": "cargo test --manifest-path runner-rs/Cargo.toml",
+    "build:rust": "cargo build --release --manifest-path runner-rs/Cargo.toml",
+    "capabilities:rust": "node scripts/query-runner-capabilities.mjs"
   }
 }
