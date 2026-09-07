@@ -62,8 +62,8 @@ async fn r05_driver_records_one_real_cancel_vs_natural_exit_race_without_inventi
     ));
 
     // This driver owns physical race facts only. Business terminal uniqueness is checked
-    // separately by feeding its terminal candidate through the existing RunnerEventReducer.
-    assert_eq!(record.business_terminal_count, 1);
+    // separately by feeding its one terminal candidate through the existing RunnerEventReducer.
+    assert_eq!(record.terminal_candidate_count, 1);
     assert!(record.stdout_drained);
     assert!(record.stderr_drained);
     assert!(record.observation_window_complete);
