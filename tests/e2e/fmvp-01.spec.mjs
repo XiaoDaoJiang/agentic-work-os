@@ -32,23 +32,28 @@ test('create Task → mock logs → close page → restart service → persisted
     page = await context.newPage(); await page.goto(historicalURL);
     await expect(page.getByTestId('run-state')).toHaveText('模拟成功');
     await expect(page.getByRole('log')).toContainText('mock_success');
-    const savedLogs = await page.getByRole('log').innerText();
+    // Compare the same DOM representation before/after restart, row for row.
+    const savedLogs = await page.getByRole('log').locator('p').allTextContents();
+    const savedRecords = await (await context.request.get(`${service.origin}/api/runs/${runId}/logs`)).json();
     await page.screenshot({ path: info.outputPath('mock-success.png'), fullPage: true });
     await page.close();
     const port = Number(new URL(service.origin).port);
     await service.stop(); service = await startTestService(directory, port);
     page = await context.newPage(); await page.goto(historicalURL);
     await expect(page.getByTestId('run-id')).toHaveText(runId);
-    await expect(page.getByRole('log')).toHaveText(savedLogs);
+    await expect(page.getByRole('log').locator('p')).toHaveText(savedLogs);
+    expect(await (await context.request.get(`${service.origin}/api/runs/${runId}/logs`)).json()).toEqual(savedRecords);
     await expect(page.getByTestId('run-state')).toHaveText('模拟成功');
     await expect(page.getByText('ready · 无真实交付', { exact: true })).toBeVisible();
     // Existing Run snapshot must not follow a Task edit from the actual UI.
     await page.getByLabel('目标', { exact: true }).fill('Edited after snapshot');
     await page.getByRole('button', { name: '保存 Task 修改' }).click();
+    await expect(page.getByText('v2', { exact: true })).toBeVisible();
     await expect(page.getByTestId('snapshot')).toContainText('FMVP-01 browser fixture');
     await expect(page.getByTestId('snapshot')).not.toContainText('Edited after snapshot');
     await page.getByRole('button', { name: '启动 mock Run', exact: true }).click();
     await expect(page.getByTestId('run-id')).not.toHaveText(runId);
+    await expect(page.getByTestId('snapshot')).toContainText('Edited after snapshot');
     await expect(page.getByRole('log')).toContainText('模拟日志 1/2');
     const interruptedURL = page.url();
     await service.stop('SIGKILL');
