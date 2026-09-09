@@ -1,0 +1,36 @@
+name: FMVP-01 isolated toolchain bootstrap
+on:
+  push:
+    branches: [feat/fmvp-01-task-mock-run]
+    paths: [.github/workflows/fmvp-01-bootstrap.yml]
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+      - name: Prepare public npm dependencies and repository bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fmvp-toolchain" "$RUNNER_TEMP/fmvp-export"
+          cd "$RUNNER_TEMP/fmvp-toolchain"
+          npm init -y
+          npm install --cache "$RUNNER_TEMP/fmvp-cache" --ignore-scripts --no-audit --no-fund --save-exact react@19.1.0 react-dom@19.1.0 typescript@5.8.3 esbuild@0.25.5 @types/node@22.15.30 @types/react@19.1.6 @types/react-dom@19.1.6 @playwright/test@1.52.0
+          cd "$GITHUB_WORKSPACE"
+          git bundle create "$RUNNER_TEMP/fmvp-export/repository.bundle" --all
+          tar -czf "$RUNNER_TEMP/fmvp-export/toolchain.tar.gz" -C "$RUNNER_TEMP" fmvp-toolchain fmvp-cache
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fmvp-01-offline-toolchain
+          path: ${{ runner.temp }}/fmvp-export/
+          retention-days: 1
+          if-no-files-found: error
