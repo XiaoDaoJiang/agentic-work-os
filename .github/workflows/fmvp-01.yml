@@ -1,0 +1,66 @@
+name: FMVP-01 mock application
+on:
+  push:
+    branches: [feat/fmvp-01-task-mock-run]
+    paths: ['apps/**', 'tools/**', 'tests/**', 'package*.json', 'playwright.config.mjs', '.github/workflows/fmvp-01.yml']
+  pull_request:
+    branches: [mvp/founder-foundation]
+    paths: ['apps/**', 'tools/**', 'tests/**', 'package*.json', 'playwright.config.mjs', '.github/workflows/fmvp-01.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: '22.16.0'
+          - os: windows-latest
+            node: '24'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Environment
+        run: |
+          mkdir -p verification-output
+          { node --version; npm --version; git --version; node -p 'JSON.stringify({platform:process.platform,arch:process.arch,versions:process.versions})'; } | tee verification-output/environment.txt
+      - name: Locked installation
+        run: npm ci 2>&1 | tee verification-output/install.txt
+      - name: Store, API and process restart tests
+        run: npm test 2>&1 | tee verification-output/tests.txt
+      - name: Type check
+        run: npm run typecheck 2>&1 | tee verification-output/typecheck.txt
+      - name: Production build
+        run: npm run build 2>&1 | tee verification-output/build.txt
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium 2>&1 | tee verification-output/browser-install.txt
+      - name: Browser acceptance
+        run: npm run test:e2e 2>&1 | tee verification-output/e2e.txt
+      - name: Preserve exact code identity
+        if: always()
+        run: |
+          git rev-parse HEAD > verification-output/code-sha.txt
+          git status --porcelain > verification-output/worktree-status.txt
+          git bundle create verification-output/repository.bundle --all
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fmvp-01-${{ matrix.os }}-node-${{ matrix.node }}
+          path: |
+            verification-output/
+            playwright-report/
+            test-results/
+          retention-days: 3
+          if-no-files-found: error

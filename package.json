@@ -1,0 +1,31 @@
+{
+  "name": "agentic-work-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0 <23 || >=24 <25"
+  },
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "build:server": "tsc -p apps/server/tsconfig.json",
+    "typecheck": "tsc -p apps/server/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "build": "npm run build:server && node tools/build-web.mjs",
+    "start": "node apps/server/dist/main.js",
+    "dev": "npm run build && npm start",
+    "test": "npm run build:server && node tools/test-server.mjs",
+    "test:e2e": "npm run build && playwright test",
+    "check": "npm run test && npm run typecheck && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.52.0",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.6",
+    "esbuild": "0.25.5",
+    "typescript": "5.8.3"
+  }
+}

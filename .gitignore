@@ -3,3 +3,19 @@ evidence/
 
 # Experiment-local transient files.
 experiments/**/.tmp/
+
+# Founder MVP local-only data, dependencies and generated output.
+node_modules/
+apps/*/dist/
+.workos/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+verification-output/
