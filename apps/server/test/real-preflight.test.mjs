@@ -175,6 +175,8 @@ test('post-Agent Git observation failure cannot release a safe Agent boundary lo
     const spawn = childProcess.spawn;
     const execute = childProcess.execFileSync;
     const helper = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), pid: 12345, kill() {} });
+    let helperClosed = false;
+    helper.once('close', () => { helperClosed = true; });
     childProcess.spawn = () => helper;
     syncBuiltinESMExports();
     const executor = new RealExecutor(store, join(directory, 'runs'), { ...profile, helper_revision: 'fixture-helper' });
@@ -202,6 +204,7 @@ test('post-Agent Git observation failure cannot release a safe Agent boundary lo
         childProcess.spawn = spawn;
         childProcess.execFileSync = execute;
         syncBuiltinESMExports();
+        if (!helperClosed) helper.emit('close', null);
         await executor.close();
     }
 });

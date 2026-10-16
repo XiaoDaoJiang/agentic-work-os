@@ -133,7 +133,7 @@ export class RealExecutor {
         catch (error) {
             if (reserved) this.store.failPreparation(requestId, gitConfirmed || error instanceof ApiError);
             if (error instanceof ApiError) throw error;
-            throw new ApiError(400, gitConfirmed ? 'REPOSITORY_UNAVAILABLE' : 'RESOURCE_HELD', gitConfirmed ? '无法准备 Git 仓库，请检查本地根目录与访问权限' : 'Git 准备过程异常，资源锁保持；请保留本地证据并检查受控进程');
+            throw new ApiError(gitConfirmed ? 400 : 409, gitConfirmed ? 'REPOSITORY_UNAVAILABLE' : 'RESOURCE_HELD', gitConfirmed ? '无法准备 Git 仓库，请检查本地根目录与访问权限' : 'Git 准备过程异常，资源锁保持；请保留本地证据并检查受控进程');
         }
         finally {
             this.preparing = false;
