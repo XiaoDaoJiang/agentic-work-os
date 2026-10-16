@@ -18,6 +18,7 @@ export interface ExecutionProfile {
     model: string;
     codex_version: string;
     evidence_path: string;
+    source_identity: string;
 }
 export function readExecutionProfile(evidencePath?: string): ExecutionProfile | null {
     if (!evidencePath || process.platform !== 'win32' || process.arch !== 'x64')
@@ -30,7 +31,7 @@ export function readExecutionProfile(evidencePath?: string): ExecutionProfile | 
             || JSON.stringify(v.sources) !== JSON.stringify(executionIdentity())
             || sha256File(v.executable) !== v.executable_sha256 || sha256File(v.helper) !== v.helper_sha256)
             return null;
-        return { executable: realpathSync(v.executable), helper: realpathSync(v.helper), helper_revision: v.helper_sha256, model: v.model, codex_version: v.codex_version, evidence_path: realpathSync(evidencePath) };
+        return { executable: realpathSync(v.executable), helper: realpathSync(v.helper), helper_revision: v.helper_sha256, model: v.model, codex_version: v.codex_version, evidence_path: realpathSync(evidencePath), source_identity: createHash('sha256').update(JSON.stringify(v.sources)).digest('hex') };
     }
     catch {
         return null;
