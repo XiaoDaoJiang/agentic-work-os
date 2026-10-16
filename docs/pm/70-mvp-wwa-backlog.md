@@ -3,7 +3,7 @@
 > 日期：2026-09-07  
 > 开工依据：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 方法：仓库内 `.agents/skills/wwas/SKILL.md` 的 Why / What / Acceptance  
-> 更新：2026-10-16。FMVP-01 / FMVP-02 已通过当前 Windows 本机 profile 验收；不是原联合 Gate PASS
+> 更新：2026-10-16。FMVP-01 至 FMVP-03 已通过当前 Windows 本机 profile 验收；FMVP-04 进行中。不是原联合 Gate PASS
 
 当前以六个可交付切片推进。切片可以在 mock 边界上独立编写测试/界面，但真实端到端能力存在明确依赖；不为了声称完全独立而隐藏依赖。
 
@@ -12,7 +12,7 @@
 | FMVP-01 | 可持久化 Task + mock Run 控制面 | DONE（Windows 本机 mock） | 见 [实际验收](../mvp/01-fmvp-01-implementation.md)；不外推其他平台 |
 | FMVP-02 | 首个 profile 的真实 Codex 执行、观察与取消 | DONE（当前 Windows profile） | [实施与证据](../mvp/02-fmvp-02-implementation.md)；G1 当前 profile 通过，默认关闭，匹配本机记录才开放 |
 | FMVP-03 | 单一 Verification 与版本明确的结果查看 | DONE（当前 Windows profile） | [实施与证据](../mvp/03-fmvp-03-implementation.md)；18 项 G1、真实链路与浏览器通过，逐次明确选择验证 |
-| FMVP-04 | 不可变交付物与 Human Review | PLANNED | 依赖 03 产物；真实 Accept/Delivery 要求 G2 |
+| FMVP-04 | 不可变交付物与 Human Review | IN_PROGRESS | [实施计划](../mvp/04-fmvp-04-implementation.md)；真实 Accept/Delivery 要求 G2 |
 | FMVP-05 | 重开恢复、异常阻塞与历史解释 | PLANNED | 基础异常保护随 02/04 实现；本项整合 UX 和回归 |
 | FMVP-06 | Founder 真实任务使用与摩擦修正 | PLANNED | 真实使用依赖已开放能力；不等待外部人数 |
 
