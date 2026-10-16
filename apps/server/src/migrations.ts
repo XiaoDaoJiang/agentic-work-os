@@ -34,6 +34,48 @@ CREATE TRIGGER immutable_log_update BEFORE UPDATE ON run_logs
 BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
 CREATE TRIGGER immutable_log_delete BEFORE DELETE ON run_logs
 BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
+` }, { version: 2, name: 'real_execution_resource_lock', sql: `
+DROP TRIGGER immutable_run_input;
+DROP TRIGGER immutable_terminal;
+DROP TRIGGER immutable_log_update;
+DROP TRIGGER immutable_log_delete;
+ALTER TABLE run_logs RENAME TO old_logs;
+ALTER TABLE runs RENAME TO old_runs;
+CREATE TABLE runs (
+ id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), request_id TEXT NOT NULL UNIQUE,
+ scenario TEXT NOT NULL CHECK(scenario IN ('success','failure','cancel')),
+ execution_mode TEXT NOT NULL CHECK(execution_mode IN ('mock','real')),
+ state TEXT NOT NULL CHECK(state IN ('running','succeeded','failed','cancelled','interrupted')),
+ phase TEXT NOT NULL CHECK(phase IN ('prepare','agent','test','review','complete')),
+ input_snapshot TEXT NOT NULL CHECK(json_valid(input_snapshot) AND json_extract(input_snapshot,'$.execution_mode')=execution_mode),
+ created_at TEXT NOT NULL, finished_at TEXT, terminal_reason TEXT,
+ CHECK((state='running' AND finished_at IS NULL AND terminal_reason IS NULL) OR (state!='running' AND finished_at IS NOT NULL AND terminal_reason IS NOT NULL))
+) STRICT;
+INSERT INTO runs SELECT * FROM old_runs;
+CREATE TABLE run_logs (
+ run_id TEXT NOT NULL REFERENCES runs(id), sequence INTEGER NOT NULL CHECK(sequence>0),
+ execution_mode TEXT NOT NULL CHECK(execution_mode IN ('mock','real')), created_at TEXT NOT NULL,
+ message TEXT NOT NULL, PRIMARY KEY(run_id,sequence),
+ CHECK((execution_mode='mock' AND substr(message,1,6)='[mock]') OR (execution_mode='real' AND substr(message,1,6)='[real]'))
+) STRICT;
+INSERT INTO run_logs SELECT * FROM old_logs;
+DROP TABLE old_logs;
+DROP TABLE old_runs;
+CREATE UNIQUE INDEX one_active_run ON runs((1)) WHERE state='running';
+CREATE INDEX runs_by_task ON runs(task_id,created_at);
+CREATE TABLE resource_lock (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1), run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
+ facts_json TEXT NOT NULL CHECK(json_valid(facts_json))
+) STRICT;
+CREATE TABLE execution_facts (
+ run_id TEXT PRIMARY KEY REFERENCES runs(id), facts_json TEXT NOT NULL CHECK(json_valid(facts_json))
+) STRICT;
+CREATE TRIGGER immutable_run_input BEFORE UPDATE OF input_snapshot,task_id,request_id,scenario,execution_mode,id,created_at ON runs
+BEGIN SELECT RAISE(ABORT, 'run input is immutable'); END;
+CREATE TRIGGER immutable_terminal BEFORE UPDATE ON runs WHEN OLD.state!='running'
+BEGIN SELECT RAISE(ABORT, 'terminal run is immutable'); END;
+CREATE TRIGGER immutable_log_update BEFORE UPDATE ON run_logs BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
+CREATE TRIGGER immutable_log_delete BEFORE DELETE ON run_logs BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
 ` }];
 
 export function migrate(db: DatabaseSync): void {

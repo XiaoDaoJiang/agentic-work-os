@@ -88,3 +88,31 @@ node tools/diagnostic-codex.mjs codex gpt-6.1-sol
 `GET /api/capabilities` 与 session 返回 `codex_profile.available=false` 及原因；真实启动、Verification、Accept/Delivery 仍被服务端拒绝。
 
 诊断中的 `unknown/held` 是事实标签并伴随持久化 nonterminal receipt，尚不是产品调度器的持久化资源锁。实际 helper crash、启动 reconciliation、阻止重启后冲突执行、working-copy baseline/drift 与真实 Codex 退出竞态仍需接入并验收。未运行完整旧 Gate 矩阵或其他平台回归；不宣布 G1、G2、原 Technical Gate PASS。
+
+## 2026-10-16 产品接线增量
+
+本轮继续 FMVP-02，不展开竞品研究。工作台沿用现有 Task、运行历史和日志布局，真实结果只说明 Agent 阶段情况，不提前呈现 Verification、Review 或交付成功。
+
+### how 与方案取舍
+
+现有产品由 Node HTTP 服务校验本地请求，SQLite 保存 Task、冻结输入和追加日志，MockExecutor 负责确定性模拟。既有 Rust helper 已负责 Windows ProcessKit 边界、RuntimeReceipt、取消、timeout 和输出 drain。旧 Schema 的 CHECK 和触发器全部限定 mock，不能仅替换执行函数。
+
+比较两种结构。方案 A 由现有应用协调业务状态，沿用 Rust helper 管理进程。方案 B 新建长期原生 daemon，应用只做 RPC。选择 A。B 需要新的 IPC、安装、重连和事件 replay，超出当前单用户单 Run 的需求。一个同模型只读设计代理核对了两个方案；这不是独立模型交叉验证。
+
+数据形态以不可变 Run snapshot、独立业务终态和持久化 resource_lock 为中心。v2 migration 保留旧 mock 行和日志，恢复不可变触发器。真实启动在 spawn 前同事务登记 Run 和 held 锁。只有 helper 成功退出、唯一 terminal、receipt 完整性和路径绑定、双流 drain 与 safe/releasable 同时成立，才释放锁。源仓库基线或工作副本 HEAD 漂移会使业务失败，资源事实单独保留。未知状态不自动重试，不按 PID 消失自动解锁。
+
+### 本轮清单
+
+- [x] Ground。读取范围、WWA、共同审美和现有应用/原生边界。
+- [x] Sketch。比较应用协调与长期 daemon，选择复用现有 helper。
+- [x] Agree。既定范围内直接推进，没有新增人工审批。
+- [x] Implement。先观察资源恢复测试失败，再实现 v2 Schema、真实执行协调、请求路由和最小 UI。
+- [ ] Verify。取得真实 Codex、物理 owner/helper crash、重启锁、drift、receipt 与 HTTP 接线证据。
+- [ ] Local delivery。检查差异与实际界面，完成本地交付记录。
+- [ ] Scrap。仅当验证揭示结构不成立时重做；当前无另建框架需求。
+
+吞吐检查保持四项。前置检查为本地身份、Schema、能力验证和测试。独立工作流为只读审查与执行工具完善。共享状态中的 API、Schema、executor 与 UI 由一个代码 owner 顺序整合。最小安全拆分为一个实现 owner，避免多个作者并写进程状态。
+
+真实能力默认关闭。只有本机 G1 manifest 的激活标记、所需 case、平台、Node/OS 和模型一致，且实际源码、加载的 dist、Codex 与 helper 的 SHA-256 匹配，服务才开放该 profile。每次真实 start 再校验。`WORKOS_G1_EVIDENCE` 只指向本地忽略目录中的实际验收记录，不是布尔绕过。诊断构造选项不由 main 暴露，只允许带显式标记的系统临时 fixture 根和其内仓库；诊断能力不计为 G1 已开放。
+
+当前限制为干净的普通 Git 根仓库、独立 clone、单全局 Run、固定三分钟 Agent 超时。submodule 暂不支持。工作副本 HEAD 在执行中变化会报告 workspace_drift，当前切片尚不支持 Agent 自行 commit 后作为正常结果继续推进。工作树中的正常文件修改被保留。Verification、Accept、Delivery 和原 Gate 仍关闭。

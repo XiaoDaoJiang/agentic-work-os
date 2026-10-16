@@ -13,14 +13,20 @@ export type Scenario = 'success' | 'failure' | 'cancel';
 export type Phase = 'prepare' | 'agent' | 'test' | 'review' | 'complete';
 export type RunState = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 export interface StartInput { execution_mode: 'mock'; scenario: Scenario; request_id: string }
+export interface RealSnapshot {
+  profile_id: string; model: string; base_revision: string; repository_identity: string;
+  source_path: string; workspace_path: string; receipt_path: string; runtime_id: string; spawn_nonce: string; timeout_ms: number;
+  executable?: string; codex_version?: string; argv?: string[]; environment_names?: string[];
+  helper_revision?: string;
+}
 export interface Run {
-  id: string; task_id: string; execution_mode: 'mock'; scenario: Scenario;
+  id: string; task_id: string; execution_mode: 'mock' | 'real'; scenario: Scenario;
   state: RunState; phase: Phase; created_at: string; finished_at: string | null;
   terminal_reason: string | null;
-  input_snapshot: { snapshot_version: 1; execution_mode: 'mock'; scenario: Scenario; task: Task };
+  input_snapshot: { snapshot_version: 1; execution_mode: 'mock' | 'real'; scenario: Scenario; task: Task; execution?: RealSnapshot };
 }
 export interface RunLog {
-  run_id: string; sequence: number; execution_mode: 'mock'; created_at: string; message: string;
+  run_id: string; sequence: number; execution_mode: 'mock' | 'real'; created_at: string; message: string;
 }
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string,

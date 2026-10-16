@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Store } from '../dist/store.js';
+const taskInput = { goal: 'fixture', definition_of_done: ['observable'], repository_path: process.cwd(), verification_draft: { command: 'DO_NOT_RUN', timeout_seconds: 60 } };
+test('real execution freezes input and retains global resource lock across restart and mock requests', t => {
+    const dir = mkdtempSync(join(tmpdir(), 'workos-real-store-'));
+    let store = new Store(join(dir, 'state.sqlite'));
+    t.after(() => { store.close(); rmSync(dir, { recursive: true, force: true }); });
+    const task = store.createTask(taskInput);
+    const snapshot = { profile_id: 'fixture', model: 'fixture', base_revision: 'a'.repeat(40), repository_identity: 'repo:fixture', source_path: process.cwd(), workspace_path: join(dir, 'workspace'), receipt_path: join(dir, 'receipt.json'), runtime_id: 'runtime-fixture', spawn_nonce: 'nonce-fixture', timeout_ms: 1000 };
+    const result = store.startRealRun(task.id, 'real-request-1', snapshot);
+    assert.equal(result.run.execution_mode, 'real');
+    assert.equal(store.startRealRun(task.id, 'real-request-1', snapshot).run.id, result.run.id);
+    store.updateTask(task.id, { ...taskInput, goal: 'later' });
+    assert.equal(store.getRun(result.run.id).input_snapshot.task.goal, 'fixture');
+    store.close();
+    store = new Store(join(dir, 'state.sqlite'));
+    store.recoverInterrupted();
+    assert.equal(store.getRun(result.run.id).state, 'interrupted');
+    assert.equal(store.resourceLock().run_id, result.run.id);
+    assert.throws(() => store.startRun(task.id, { execution_mode: 'mock', scenario: 'success', request_id: 'mock-blocked' }), /资源|resource/i);
+    assert.equal(store.getTask(task.id).state, 'ready');
+});

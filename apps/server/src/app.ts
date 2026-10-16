@@ -1,14 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
+import { tmpdir } from 'node:os';
 import { Store, acquireDatabaseMutex } from './store.js';
 import { ApiError } from './contracts.js';
 import { MockExecutor } from './mock-executor.js';
 import { codexProfile } from './codex-adapter.js';
+import { readExecutionProfile, type ExecutionProfile } from './execution-profile.js';
+import { RealExecutor } from './real-executor.js';
 
-const capabilities = Object.freeze({ execution_mode: 'mock', real_execution: false,
-  verification_execution: false, accept: false, accepted_delivery: false, g1: 'closed', g2: 'closed', codex_profile: codexProfile });
 const maxBodyBytes = 32 * 1024;
 function readJson(req: IncomingMessage): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
@@ -35,7 +36,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body));
 }
 export interface ApplicationOptions {
-  databasePath: string; port?: number; intervalMs?: number; staticDir?: string;
+  databasePath: string; port?: number; intervalMs?: number; staticDir?: string; g1EvidencePath?: string;
+  diagnostic?: { fixtureRoot: string; profile: ExecutionProfile };
 }
 export async function createApplication(options: ApplicationOptions) {
   const port = options.port ?? 4317;
@@ -46,6 +48,20 @@ export async function createApplication(options: ApplicationOptions) {
   let store: Store;
   try { store = new Store(resolve(options.databasePath)); } catch (error) { release(); throw error; }
   const executor = new MockExecutor(store, interval);
+  try { if (options.diagnostic) {
+    const root = realpathSync(options.diagnostic.fixtureRoot);
+    const temporary = relative(realpathSync(tmpdir()), root);
+    const database = relative(root, resolve(options.databasePath));
+    if (temporary.startsWith('..') || isAbsolute(temporary) || !temporary.startsWith('workos-g1-')
+      || database.startsWith('..') || isAbsolute(database) || readFileSync(join(root, '.g1-disposable-fixture'), 'utf8') !== 'diagnostic-only\n') {
+      throw new Error('Diagnostic execution requires an explicit disposable G1 fixture');
+    }
+  } } catch (error) { store.close(); release(); throw error; }
+  const profile = readExecutionProfile(options.g1EvidencePath) ?? options.diagnostic?.profile;
+  const realExecutor = profile ? new RealExecutor(store, join(dirname(resolve(options.databasePath)), 'runs'), profile, options.diagnostic?.fixtureRoot) : null;
+  const capabilities = { execution_mode: 'mock', real_execution: !!profile,
+    verification_execution: false, accept: false, accepted_delivery: false, g1: options.diagnostic ? 'diagnostic_not_passed' : profile ? 'passed_current_profile' : 'closed', g2: 'closed',
+    codex_profile: profile ? { ...codexProfile, available: true, reason: options.diagnostic ? '一次性仓库诊断，尚未完成 G1 验收。' : '当前 Windows profile 已通过本机 G1；trusted-local，Verification / Review 仍关闭。', model: profile.model, version: profile.codex_version } : codexProfile };
   const token = randomBytes(32).toString('base64url');
   let closing = false; let closePromise: Promise<void> | undefined;
   const server = createServer({ requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 16384 }, (req, res) => {
@@ -91,6 +107,7 @@ export async function createApplication(options: ApplicationOptions) {
     const url = new URL(req.url ?? '/', origin); const path = url.pathname;
     if (method === 'GET' && path === '/api/session') { send(res, 200, { session_token: token, ...capabilities }); return; }
     if (method === 'GET' && path === '/api/capabilities') { send(res, 200, capabilities); return; }
+    if (method === 'GET' && path === '/api/resource-lock') { send(res, 200, store.resourceLock()); return; }
     if (method === 'GET' && path === '/api/health') { send(res, 200, { status: 'ok', execution_mode: 'mock', schema_version: store.schemaVersion() }); return; }
     if (mutating && (/^\/api\/(?:accepted-deliveries|deliveries|verification|execute)(?:\/|$)/.test(path)
       || /^\/api\/runs\/real$/.test(path) || /^\/api\/runs\/[^/]+\/(?:accept|delivery|deliveries|verification|execute)$/.test(path))) {
@@ -103,7 +120,14 @@ export async function createApplication(options: ApplicationOptions) {
     if (taskMatch && method === 'PATCH') { send(res, 200, store.updateTask(taskMatch[1]!, await readJson(req))); return; }
     const startMatch = /^\/api\/tasks\/([^/]+)\/runs$/.exec(path);
     if (startMatch && method === 'POST') {
-      const input = await readJson(req); executor.assertHealthy();
+      const input = await readJson(req);
+      if (input && typeof input === 'object' && 'execution_mode' in input && input.execution_mode === 'real') {
+        if (!realExecutor || (!options.diagnostic && JSON.stringify(readExecutionProfile(options.g1EvidencePath)) !== JSON.stringify(profile))) throw new ApiError(403, 'CAPABILITY_DISABLED', codexProfile.reason);
+        if (Object.keys(input).some(key => !['execution_mode', 'request_id'].includes(key)) || !('request_id' in input) || typeof input.request_id !== 'string') throw new ApiError(400, 'INVALID_INPUT', '真实执行仅接受 execution_mode 和 request_id');
+        const result = await realExecutor.start(startMatch[1]!, input.request_id);
+        send(res, result.replay ? 200 : 201, result); return;
+      }
+      executor.assertHealthy();
       const result = store.startRun(startMatch[1]!, input);
       if (!result.replay) executor.start(result.run);
       send(res, result.replay ? 200 : 201, result); return;
@@ -112,6 +136,8 @@ export async function createApplication(options: ApplicationOptions) {
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(path);
     if (runMatch && method === 'GET') { send(res, 200, store.getRun(runMatch[1]!)); return; }
     const logMatch = /^\/api\/runs\/([^/]+)\/logs$/.exec(path);
+    const factsMatch = /^\/api\/runs\/([^/]+)\/facts$/.exec(path);
+    if (factsMatch && method === 'GET') { send(res, 200, store.getExecutionFacts(factsMatch[1]!)); return; }
     if (logMatch && method === 'GET') {
       const cursor = url.searchParams.get('after') ?? '0';
       if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor))) throw new ApiError(400, 'INVALID_CURSOR', 'after 必须为非负安全整数');
@@ -119,7 +145,13 @@ export async function createApplication(options: ApplicationOptions) {
     }
     const cancelMatch = /^\/api\/runs\/([^/]+)\/cancel$/.exec(path);
     if (cancelMatch && method === 'POST') {
-      await readJson(req); send(res, 200, executor.cancel(cancelMatch[1]!)); return;
+      await readJson(req);
+      const run = store.getRun(cancelMatch[1]!);
+      if (run.execution_mode === 'real') {
+        if (!realExecutor) { send(res, 200, run); return; }
+        send(res, 200, realExecutor.cancel(run.id)); return;
+      }
+      send(res, 200, executor.cancel(run.id)); return;
     }
     const assets: Record<string, [string, string]> = {
       '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'],
@@ -148,13 +180,16 @@ export async function createApplication(options: ApplicationOptions) {
     close(): Promise<void> {
       if (!closePromise) {
         closing = true; executor.close();
-        closePromise = new Promise<void>((resolveClose, reject) => {
+        closePromise = (async () => {
+          await realExecutor?.close();
+          await new Promise<void>((resolveClose, reject) => {
           server.close(error => {
             try { store.close(); release(); } catch (closeError) { reject(closeError); return; }
             if (error) reject(error); else resolveClose();
           });
           server.closeAllConnections();
-        });
+          });
+        })();
       }
       return closePromise;
     },

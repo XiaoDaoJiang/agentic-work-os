@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { migrate } from './migrations.js';
-import { ApiError, parseTaskInput, parseStartInput, type Task, type Run, type RunLog, type Phase, type RunState } from './contracts.js';
+import { ApiError, parseTaskInput, parseStartInput, type Task, type Run, type RunLog, type Phase, type RunState, type RealSnapshot } from './contracts.js';
 
 type Row = Record<string, SQLOutputValue>;
 const now = () => new Date().toISOString();
@@ -65,12 +65,13 @@ export class Store {
     return this.transaction(() => {
       const existing = this.db.prepare('SELECT * FROM runs WHERE request_id=?').get(input.request_id);
       if (existing) {
-        if (existing.task_id !== taskId || existing.scenario !== input.scenario) {
+        if (existing.task_id !== taskId || existing.scenario !== input.scenario || existing.execution_mode !== 'mock') {
           throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency key 已用于不同的 Task 或模拟场景');
         }
         return { run: this.run(existing), replay: true };
       }
       const task = this.getTask(taskId); const active = this.activeRun();
+      this.assertResourcesAvailable();
       if (active) throw new ApiError(409, 'ACTIVE_RUN', 'An active mock Run already exists；请查看或取消它', undefined, active.id);
       const id = `run_${randomUUID()}`;
       const snapshot: Run['input_snapshot'] = { snapshot_version: 1, execution_mode: 'mock', scenario: input.scenario, task };
@@ -81,9 +82,10 @@ export class Store {
     });
   }
   private log(id: string, message: string) {
+    const mode = this.getRun(id).execution_mode;
     this.db.prepare(`INSERT INTO run_logs (run_id,sequence,execution_mode,created_at,message)
-      SELECT ?,COALESCE(MAX(sequence),0)+1,'mock',?,? FROM run_logs WHERE run_id=?`)
-      .run(id, now(), `[mock] ${message}`, id);
+      SELECT ?,COALESCE(MAX(sequence),0)+1,?,?,? FROM run_logs WHERE run_id=?`)
+      .run(id, mode, now(), `[${mode}] ${message}`, id);
   }
   getLogs(id: string, after = 0): RunLog[] {
     this.getRun(id);
@@ -99,7 +101,7 @@ export class Store {
     return this.transaction(() => {
       const run = this.getRun(id); if (run.state !== 'running') return run;
       this.db.prepare('UPDATE runs SET state=?,phase=?,finished_at=?,terminal_reason=? WHERE id=?').run(state, phase, now(), reason, id);
-      this.log(id, `${reason}；仅模拟终态 ${state}。无真实交付、无 OS 进程树终止声明；Task 保持 ready。`);
+      this.log(id, run.execution_mode === 'mock' ? `${reason}；仅模拟终态 ${state}。无真实交付、无 OS 进程树终止声明；Task 保持 ready。` : `${reason}；Agent 阶段结束。Verification / Review / Delivery 未开放；Task 保持 ready。`);
       return this.getRun(id);
     });
   }
@@ -107,6 +109,56 @@ export class Store {
     const active = this.activeRun();
     if (!active) return 0;
     this.finishRun(active.id, 'interrupted', active.phase, 'service_restart_no_resume'); return 1;
+  }
+  resourceLock(): { run_id: string; facts: unknown } | null {
+    const row = this.db.prepare('SELECT * FROM resource_lock WHERE singleton=1').get();
+    return row ? { run_id: String(row.run_id), facts: JSON.parse(String(row.facts_json)) } : null;
+  }
+  assertResourcesAvailable() {
+    const lock = this.resourceLock();
+    if (lock) throw new ApiError(409, 'RESOURCE_HELD', '资源事实尚未确认安全；禁止启动新 Run，请保留记录并检查本地进程', undefined, lock.run_id);
+  }
+  recordResourceFacts(id: string, facts: Record<string, unknown>) {
+    this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);
+  }
+  replayRealRun(taskId: string, requestId: string): Run | null {
+    const row = this.db.prepare('SELECT * FROM runs WHERE request_id=?').get(requestId);
+    if (!row) return null;
+    if (row.task_id !== taskId || row.execution_mode !== 'real') throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', '请求 ID 已用于其他执行');
+    return this.run(row);
+  }
+  startRealRun(taskId: string, requestId: string, execution: RealSnapshot, taskRevision?: number): { run: Run; replay: boolean } {
+    return this.transaction(() => {
+      const existing = this.replayRealRun(taskId, requestId);
+      if (existing) return { run: existing, replay: true };
+      this.assertResourcesAvailable();
+      const active = this.activeRun();
+      if (active) throw new ApiError(409, 'ACTIVE_RUN', '全局已有活动 Run', undefined, active.id);
+      const task = this.getTask(taskId); const id = `run_${randomUUID()}`;
+      if (taskRevision !== undefined && task.revision !== taskRevision) throw new ApiError(409, 'TASK_CHANGED', '准备期间 Task 已修改，请重新启动以冻结一致的输入');
+      const snapshot: Run['input_snapshot'] = { snapshot_version: 1, execution_mode: 'real', scenario: 'success', task, execution };
+      this.db.prepare("INSERT INTO runs VALUES (?,?,?,'success','real','running','prepare',?,?,NULL,NULL)")
+        .run(id, taskId, requestId, JSON.stringify(snapshot), now());
+      this.db.prepare('INSERT INTO resource_lock VALUES (1,?,?)').run(id, JSON.stringify({ resource_state: 'unknown', resource_lock: 'held', reason: 'before_spawn' }));
+      this.log(id, '输入已冻结；资源锁已持久化。仅执行 Agent 阶段，未执行 Verification。');
+      return { run: this.getRun(id), replay: false };
+    });
+  }
+  getExecutionFacts(id: string): unknown {
+    this.getRun(id); const row = this.db.prepare('SELECT facts_json FROM execution_facts WHERE run_id=?').get(id);
+    return row ? JSON.parse(String(row.facts_json)) : null;
+  }
+  finishRealRun(id: string, state: Exclude<RunState, 'running'>, reason: string, facts: Record<string, unknown>, safe: boolean): Run {
+    return this.transaction(() => {
+      const run = this.getRun(id);
+      if (run.state !== 'running') return run;
+      this.db.prepare('INSERT INTO execution_facts VALUES (?,?)').run(id, JSON.stringify(facts));
+      if (safe) this.db.prepare('DELETE FROM resource_lock WHERE run_id=?').run(id);
+      else this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);
+      this.db.prepare("UPDATE runs SET state=?,phase='agent',finished_at=?,terminal_reason=? WHERE id=?").run(state, now(), reason, id);
+      this.log(id, `${reason}；资源${safe ? '已确认停止且输出已收尾' : '未知，保持全局锁'}。Verification / Review / Delivery 仍关闭。`);
+      return this.getRun(id);
+    });
   }
 }
 

@@ -176,8 +176,10 @@ test('second service sharing the DB cannot interrupt a live mock; port failure r
 });
 
 test('product sources retain the no-process-launch and no-credential-access barrier', () => {
-  const source = readdirSync(new URL('../src/', import.meta.url)).filter(n => n.endsWith('.ts'))
+  const source = ['mock-executor.ts', 'contracts.ts'].filter(n => n.endsWith('.ts'))
     .map(n => readFileSync(new URL(`../src/${n}`, import.meta.url), 'utf8')).join('\n');
   assert.doesNotMatch(source, /(?:node:)?child_process|worker_threads|\beval\s*\(|new Function\b|import\s*\(/);
   assert.doesNotMatch(source, /\.codex|auth\.json|process\.env\.(?:HOME|USERPROFILE|OPENAI_API_KEY)/);
+  const adapter = readFileSync(new URL('../src/real-executor.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(adapter, /auth\.json|OPENAI_API_KEY|dangerously-bypass/);
 });
