@@ -20,8 +20,8 @@ async function api<T>(path: string, method = 'GET', value?: unknown): Promise<T>
   return data as T;
 }
 const message = (error: unknown) => error instanceof Error ? error.message : '操作失败，请刷新并查看持久化状态';
-const states: Record<Run['state'], string> = { running: '模拟运行中', succeeded: '模拟成功', failed: '模拟失败', cancelled: '模拟取消', interrupted: '模拟中断' };
-const stateLabel = (run: Run) => run.execution_mode === 'mock' ? states[run.state] : run.input_snapshot.verification ? ({running:'执行与验证中',succeeded:'验证命令通过 · 捕获版本一致',failed:'执行或验证未通过',cancelled:'已确认取消',interrupted:'停止状态未知 · 资源保持锁定'})[run.state] : ({ running: 'Codex 执行中', succeeded: 'Agent 已退出 · 尚未验证', failed: 'Agent 执行失败', cancelled: '已确认取消', interrupted: '停止状态未知 · 资源保持锁定' })[run.state];
+const states: Record<Run['state'], string> = { waiting_review:'待审核', completed:'审核完成', running: '模拟运行中', succeeded: '模拟成功', failed: '模拟失败', cancelled: '模拟取消', interrupted: '模拟中断' };
+const stateLabel = (run: Run) => run.execution_mode === 'mock' ? states[run.state] : run.input_snapshot.verification ? ({waiting_review:'等待人工审核',completed:'审核完成',running:'执行与验证中',succeeded:'验证命令通过 · 捕获版本一致',failed:'执行或验证未通过',cancelled:'已确认取消',interrupted:'停止状态未知 · 资源保持锁定'})[run.state] : ({ waiting_review:'等待人工审核',completed:'审核完成', running: 'Codex 执行中', succeeded: 'Agent 已退出 · 尚未验证', failed: 'Agent 执行失败', cancelled: '已确认取消', interrupted: '停止状态未知 · 资源保持锁定' })[run.state];
 const phases = ['prepare', 'agent', 'test', 'review', 'complete'];
 function readLocation() { const q = new URLSearchParams(location.hash.slice(1)); return { taskId: q.get('task') ?? '', runId: q.get('run') ?? '' }; }
 

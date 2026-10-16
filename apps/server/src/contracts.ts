@@ -6,12 +6,17 @@ export interface TaskInput {
   verification_draft: { command: string; timeout_seconds: number };
 }
 export interface Task extends TaskInput {
-  id: string; revision: number; state: 'ready'; execution_mode: 'mock';
+  id: string; revision: number; state: 'ready' | 'review' | 'done'; execution_mode: 'mock';
   created_at: string; updated_at: string;
 }
 export type Scenario = 'success' | 'failure' | 'cancel';
 export type Phase = 'prepare' | 'agent' | 'test' | 'review' | 'complete';
-export type RunState = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+export type RunState = 'running' | 'waiting_review' | 'completed' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+export type ExecutionTerminal = 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+export interface ReviewRequest {request_id:string; decision:'accept'|'reject'; package_id:string; package_sha256:string; note:string}
+export interface Artifact {id:string; run_id:string; type:string; content_location:string; sha256:string; size:number; sealed_at:string}
+export interface ReviewDecision {run_id:string; request_id:string; decision:'accept'|'reject'; change_package_artifact_id:string; change_package_sha256:string; note:string; decided_at:string}
+export interface ResourceCheck {operation_id:string; package_sha256:string; checked_at:string; resource_state:'safe'|'unknown'; drift:'clear'|'detected'|'unavailable'; replay:{base_revision:string;result_tree_hash:string}|null; reason:string}
 export interface StartInput { execution_mode: 'mock'; scenario: Scenario; request_id: string }
 export interface VerificationSelection { verify: boolean; expected_task_revision?: number }
 export interface FrozenVerification {
@@ -43,6 +48,7 @@ export interface RealSnapshot {
   source_path: string; workspace_path: string; receipt_path: string; runtime_id: string; spawn_nonce: string; timeout_ms: number;
   executable?: string; codex_version?: string; argv?: string[]; environment_names?: string[];
   helper_revision?: string;
+  review_identity?: string;
 }
 export interface Run {
   id: string; task_id: string; execution_mode: 'mock' | 'real'; scenario: Scenario;
@@ -103,4 +109,15 @@ export function parseStartInput(value: unknown): StartInput {
   if (typeof v.request_id !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(v.request_id)) errors.request_id = '需要 8–100 位幂等请求 ID';
   if (Object.keys(errors).length) throw new ApiError(400, 'INVALID_INPUT', '模拟运行输入不合法', errors);
   return v as unknown as StartInput;
+}
+export function parseReviewRequest(value:unknown):ReviewRequest {
+  const v=object(value), errors:Record<string,string>={};
+  rejectUnknown(v,['request_id','decision','package_id','package_sha256','note'],errors);
+  if(typeof v.request_id!=='string'||!/^[A-Za-z0-9_-]{8,100}$/.test(v.request_id))errors.request_id='需要 8–100 位幂等请求 ID';
+  if(v.decision!=='accept'&&v.decision!=='reject')errors.decision='请选择接受或拒绝';
+  if(typeof v.package_id!=='string'||!/^[A-Za-z0-9._-]{1,150}$/.test(v.package_id))errors.package_id='需要封存包 ID';
+  if(typeof v.package_sha256!=='string'||!/^[a-f0-9]{64}$/.test(v.package_sha256))errors.package_sha256='需要封存包 SHA256';
+  if(v.note!==undefined&&(typeof v.note!=='string'||v.note.length>4000||v.note.includes('\0')))errors.note='备注最多 4000 字符';
+  if(Object.keys(errors).length)throw new ApiError(400,'INVALID_INPUT','审核输入不合法',errors);
+  return {...v,note:typeof v.note==='string'?v.note.trim():''} as unknown as ReviewRequest;
 }

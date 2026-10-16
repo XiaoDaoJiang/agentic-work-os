@@ -24,10 +24,16 @@ test('forward migration preserves v1 mock snapshots, logs and immutable guards',
     const snapshot = JSON.stringify({ execution_mode: 'mock', task: { goal: 'old fixture' } });
     old.prepare("INSERT INTO runs VALUES('run','task','old-request','success','mock','succeeded','complete',?,'a','b','mock_success')").run(snapshot);
     old.prepare("INSERT INTO run_logs VALUES('run',1,'mock','a','[mock] old history')").run();
+    const originalRun = {...old.prepare('SELECT * FROM runs').get()};
+    const originalTask = {...old.prepare('SELECT * FROM tasks').get()};
     old.close();
     const store = new Store(file);
     try {
-        assert.equal(store.schemaVersion(), 4);
+        assert.equal(store.schemaVersion(), 5);
+        assert.deepEqual({...store.db.prepare('SELECT * FROM runs').get()},originalRun);
+        assert.deepEqual({...store.db.prepare('SELECT * FROM tasks').get()},originalTask);
+        assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+        assert.equal(store.db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
         assert.equal(store.getRun('run').input_snapshot.task.goal, 'old fixture');
         assert.equal(store.getLogs('run')[0].message, '[mock] old history');
         assert.throws(() => store.db.exec("UPDATE runs SET input_snapshot='{}' WHERE id='run'"), /immutable/);
@@ -217,11 +223,11 @@ test('v2 held Run owner migrates intact to the preparation-aware v3 lock', t => 
     const {run} = store.startRealRun(task.id,'v2-held-request',execution);
     store.db.exec('DROP TABLE resource_lock; CREATE TABLE resource_lock(singleton INTEGER PRIMARY KEY CHECK(singleton=1),run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),facts_json TEXT NOT NULL CHECK(json_valid(facts_json))) STRICT;');
     store.db.prepare('INSERT INTO resource_lock VALUES(1,?,?)').run(run.id,JSON.stringify({resource_state:'unknown',resource_lock:'held',reason:'v2'}));
-    store.db.exec('DROP TABLE stage_observations; DROP TABLE captured_versions; DROP TABLE verification_results; DROP TABLE stage_output; DROP TRIGGER immutable_execution_facts_update; DROP TRIGGER immutable_execution_facts_delete; DELETE FROM schema_migrations WHERE version>=3; PRAGMA user_version=2;');
+    store.db.exec('DROP TABLE review_decisions; DROP TABLE artifacts; DROP TABLE events; DROP TRIGGER review_transition; DROP TRIGGER completed_decision; DROP TRIGGER sealed_execution_facts_insert; DROP TRIGGER sealed_run_logs_insert; DROP TABLE stage_observations; DROP TABLE captured_versions; DROP TABLE verification_results; DROP TABLE stage_output; DROP TRIGGER immutable_execution_facts_update; DROP TRIGGER immutable_execution_facts_delete; DELETE FROM schema_migrations WHERE version>=3; PRAGMA user_version=2;');
     store.close();
     const reopened = new Store(join(directory,'state.sqlite'));
     try {
-        assert.equal(reopened.schemaVersion(),4);
+        assert.equal(reopened.schemaVersion(),5);
         assert.equal(reopened.resourceLock().run_id,run.id);
         assert.equal(reopened.resourceLock().request_id,null);
         assert.throws(()=>reopened.reservePreparation(task.id,'blocked-by-v2-lock'),/资源/);
