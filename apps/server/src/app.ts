@@ -9,6 +9,7 @@ import { MockExecutor } from './mock-executor.js';
 import { codexProfile } from './codex-adapter.js';
 import { readExecutionProfile, type ExecutionProfile } from './execution-profile.js';
 import { RealExecutor } from './real-executor.js';
+import { parseVerificationSelection } from './verification.js';
 
 const maxBodyBytes = 32 * 1024;
 function readJson(req: IncomingMessage): Promise<unknown> {
@@ -60,8 +61,8 @@ export async function createApplication(options: ApplicationOptions) {
   const profile = readExecutionProfile(options.g1EvidencePath) ?? options.diagnostic?.profile;
   const realExecutor = profile ? new RealExecutor(store, join(dirname(resolve(options.databasePath)), 'runs'), profile, options.diagnostic?.fixtureRoot) : null;
   const capabilities = { execution_mode: 'mock', real_execution: !!profile,
-    verification_execution: false, accept: false, accepted_delivery: false, g1: options.diagnostic ? 'diagnostic_not_passed' : profile ? 'passed_current_profile' : 'closed', g2: 'closed',
-    codex_profile: profile ? { ...codexProfile, available: true, reason: options.diagnostic ? '一次性仓库诊断，尚未完成 G1 验收。' : '当前 Windows profile 已通过本机 G1；trusted-local，Verification / Review 仍关闭。', model: profile.model, version: profile.codex_version } : codexProfile };
+    verification_execution: !!profile, accept: false, accepted_delivery: false, g1: options.diagnostic ? 'diagnostic_not_passed' : profile ? 'passed_current_profile' : 'closed', g2: 'closed',
+    codex_profile: profile ? { ...codexProfile, available: true, reason: options.diagnostic ? '一次性仓库诊断，尚未完成 G1 验收。' : '当前 Windows profile 已通过本机 G1；trusted-local，可显式选择本次验证；Review / Delivery 仍关闭。', model: profile.model, version: profile.codex_version } : codexProfile };
   const token = randomBytes(32).toString('base64url');
   let closing = false; let closePromise: Promise<void> | undefined;
   const server = createServer({ requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 16384 }, (req, res) => {
@@ -123,8 +124,8 @@ export async function createApplication(options: ApplicationOptions) {
       const input = await readJson(req);
       if (input && typeof input === 'object' && 'execution_mode' in input && input.execution_mode === 'real') {
         if (!realExecutor || (!options.diagnostic && JSON.stringify(readExecutionProfile(options.g1EvidencePath)) !== JSON.stringify(profile))) throw new ApiError(403, 'CAPABILITY_DISABLED', codexProfile.reason);
-        if (Object.keys(input).some(key => !['execution_mode', 'request_id'].includes(key)) || !('request_id' in input) || typeof input.request_id !== 'string') throw new ApiError(400, 'INVALID_INPUT', '真实执行仅接受 execution_mode 和 request_id');
-        const result = await realExecutor.start(startMatch[1]!, input.request_id);
+        if (Object.keys(input).some(key => !['execution_mode', 'request_id', 'verify', 'expected_task_revision'].includes(key)) || !('request_id' in input) || typeof input.request_id !== 'string') throw new ApiError(400, 'INVALID_INPUT', '真实执行输入字段不合法');
+        const result = await realExecutor.start(startMatch[1]!, input.request_id, parseVerificationSelection(input as Record<string,unknown>));
         send(res, result.replay ? 200 : 201, result); return;
       }
       executor.assertHealthy();
@@ -136,6 +137,8 @@ export async function createApplication(options: ApplicationOptions) {
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(path);
     if (runMatch && method === 'GET') { send(res, 200, store.getRun(runMatch[1]!)); return; }
     const logMatch = /^\/api\/runs\/([^/]+)\/logs$/.exec(path);
+    const evidenceMatch = /^\/api\/runs\/([^/]+)\/evidence$/.exec(path);
+    if (evidenceMatch && method === 'GET') {send(res,200,store.getRunEvidence(evidenceMatch[1]!));return;}
     const factsMatch = /^\/api\/runs\/([^/]+)\/facts$/.exec(path);
     if (factsMatch && method === 'GET') { send(res, 200, store.getExecutionFacts(factsMatch[1]!)); return; }
     if (logMatch && method === 'GET') {

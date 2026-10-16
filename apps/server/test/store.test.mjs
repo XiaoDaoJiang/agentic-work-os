@@ -70,11 +70,11 @@ test('recovery is explicit interrupted, idempotent and does not manufacture succ
 
 test('migration is versioned/idempotent; newer schema fails closed; logs append-only', t => {
   const { open } = fixture(t); const s = open();
-  assert.equal(s.schemaVersion(), 3);
+  assert.equal(s.schemaVersion(), 4);
   const task = s.createTask(input);
   const { run } = s.startRun(task.id, { execution_mode: 'mock', scenario: 'cancel', request_id: 'migration-test' });
   assert.throws(() => s.db.prepare('DELETE FROM run_logs WHERE run_id = ?').run(run.id), /append-only/);
-  s.close(); const r = open(); assert.equal(r.schemaVersion(), 3);
+  s.close(); const r = open(); assert.equal(r.schemaVersion(), 4);
   r.db.exec('PRAGMA user_version = 999'); r.close();
   assert.throws(open, /newer schema/i);
 });

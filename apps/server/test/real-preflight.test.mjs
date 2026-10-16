@@ -1,3 +1,4 @@
+import { verificationShell } from '../dist/verification.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -26,7 +27,7 @@ test('forward migration preserves v1 mock snapshots, logs and immutable guards',
     old.close();
     const store = new Store(file);
     try {
-        assert.equal(store.schemaVersion(), 3);
+        assert.equal(store.schemaVersion(), 4);
         assert.equal(store.getRun('run').input_snapshot.task.goal, 'old fixture');
         assert.equal(store.getLogs('run')[0].message, '[mock] old history');
         assert.throws(() => store.db.exec("UPDATE runs SET input_snapshot='{}' WHERE id='run'"), /immutable/);
@@ -79,7 +80,7 @@ test('G1 default denies absent, incomplete, stale and tampered evidence', t => {
     assert.equal(readExecutionProfile(), null);
     const file = join(directory, 'evidence.json');
     const sources = executionIdentity();
-    const manifest = { schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
     writeFileSync(file, JSON.stringify(manifest));
     assert.ok(readExecutionProfile(file));
     for (const patch of [{ activation: 'diagnostic' }, { node: 'v0' }, { sources: {} }, { helper_sha256: 'wrong' }, { cases: {} }]) {
@@ -91,7 +92,7 @@ test('application revalidates activation evidence before each actual start', asy
     const { directory, source } = fixture(t);
     const evidence = join(directory, 'g1.json');
     const sources = executionIdentity();
-    const manifest = { schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
     writeFileSync(evidence, JSON.stringify(manifest));
     const app = await createApplication({ databasePath: join(directory, 'app.sqlite'), port: 0, g1EvidencePath: evidence });
     try {
@@ -196,6 +197,7 @@ test('post-Agent Git observation failure cannot release a safe Agent boundary lo
         childProcess.execFileSync = () => { throw Object.assign(new Error('fixture post-Agent Git timeout'), {code:'ETIMEDOUT',signal:'SIGTERM'}); };
         syncBuiltinESMExports();
         helper.emit('close',0);
+        await new Promise(resolve=>setImmediate(resolve));
         assert.equal(store.getRun(run.id).state,'interrupted');
         assert.equal(store.resourceLock().run_id,run.id);
         assert.equal(store.getExecutionFacts(run.id).resource_state,'unknown');
@@ -215,11 +217,11 @@ test('v2 held Run owner migrates intact to the preparation-aware v3 lock', t => 
     const {run} = store.startRealRun(task.id,'v2-held-request',execution);
     store.db.exec('DROP TABLE resource_lock; CREATE TABLE resource_lock(singleton INTEGER PRIMARY KEY CHECK(singleton=1),run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),facts_json TEXT NOT NULL CHECK(json_valid(facts_json))) STRICT;');
     store.db.prepare('INSERT INTO resource_lock VALUES(1,?,?)').run(run.id,JSON.stringify({resource_state:'unknown',resource_lock:'held',reason:'v2'}));
-    store.db.exec('DELETE FROM schema_migrations WHERE version=3; PRAGMA user_version=2;');
+    store.db.exec('DROP TABLE stage_observations; DROP TABLE captured_versions; DROP TABLE verification_results; DROP TABLE stage_output; DROP TRIGGER immutable_execution_facts_update; DROP TRIGGER immutable_execution_facts_delete; DELETE FROM schema_migrations WHERE version>=3; PRAGMA user_version=2;');
     store.close();
     const reopened = new Store(join(directory,'state.sqlite'));
     try {
-        assert.equal(reopened.schemaVersion(),3);
+        assert.equal(reopened.schemaVersion(),4);
         assert.equal(reopened.resourceLock().run_id,run.id);
         assert.equal(reopened.resourceLock().request_id,null);
         assert.throws(()=>reopened.reservePreparation(task.id,'blocked-by-v2-lock'),/资源/);

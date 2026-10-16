@@ -26,6 +26,7 @@ async function createFixture() {
   await writeFile(path.join(workspace, 'exec.sh'), '#!/bin/sh\necho before\n');
   await chmod(path.join(workspace, 'exec.sh'), 0o755);
   await git(workspace, ['add', '-A']);
+  await git(workspace, ['update-index', '--chmod=+x', 'exec.sh']);
   await git(workspace, ['commit', '-m', 'base']);
   const baseRevision = await git(workspace, ['rev-parse', 'HEAD']);
   return { workspace, baseRevision };
@@ -64,5 +65,5 @@ test('computeResultTreeHash hashes the working tree result through a temporary i
 test('collectWorkspaceChanges fails closed on symlink entries', async () => {
   const { workspace, baseRevision } = await createFixture(); const target=path.join(workspace,'target.txt'); await writeFile(target,'target\n');
   try { await (await import('node:fs/promises')).symlink('target.txt',path.join(workspace,'link.txt')); } catch(error){ if(error?.code==='EPERM') return; throw error; }
-  await assert.rejects(()=>collectWorkspaceChanges({workspace,baseRevision}),/unsupported Git mode 120000/);
+  await assert.rejects(()=>collectWorkspaceChanges({workspace,baseRevision}),/unsupported Git mode 120000|only ordinary files supported/);
 });

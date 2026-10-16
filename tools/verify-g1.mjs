@@ -10,6 +10,8 @@ import { Store } from '../apps/server/dist/store.js';
 import { assertBaseline, receiptMatches } from '../apps/server/dist/real-executor.js';
 import { createApplication } from '../apps/server/dist/app.js';
 import { executionIdentity, sha256File, g1Cases } from '../apps/server/dist/execution-profile.js';
+import { verifyVerification } from './verify-verification.mjs';
+import { verificationShell } from '../apps/server/dist/verification.js';
 import { ensureRepositoryMarker } from '../experiments/milestone-0/src/repository-marker.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 assert.equal(process.platform, 'win32');
@@ -17,7 +19,7 @@ const executable = process.argv[2];
 assert.ok(executable && path.isAbsolute(executable), 'supply explicit Codex exe');
 const helper = path.join(root, 'experiments/milestone-0/native-runner/target/debug/diagnostic-runner.exe');
 const directory = mkdtempSync(path.join(os.tmpdir(), 'workos-g1-'));
-const evidence = path.join(root, 'verification-output/fmvp-02', path.basename(directory));
+const evidence = path.join(root, 'verification-output/fmvp-03', path.basename(directory));
 mkdirSync(evidence, { recursive: true });
 const git = (cwd, args) => { const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
 const version = spawnSync(executable, ['--version'], { encoding: 'utf8', windowsHide: true });
@@ -276,7 +278,27 @@ try {
     finally {
         await app.close();
     }
-    const manifest = { schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: `${process.platform}/${process.arch}`, node: process.version, os_release: os.release(), model: 'gpt-6.1-sol', code_sha: git(root, ['rev-parse', 'HEAD']), sources: executionIdentity(), executable, codex_version: version.stdout.trim(), executable_sha256: sha256File(executable), helper, helper_sha256: sha256File(helper), cases, versions: { git: spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout.trim(), rust: spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim() } };
+    await verifyVerification({helper,evidence:path.join(evidence,'verification-native')});
+    pass('verification-boundary');
+    pass('capture-consistency');
+    const verificationApp=await createApplication({databasePath:path.join(directory,'verification-http.sqlite'),port:0,diagnostic});
+    try {
+      const session=await (await fetch(verificationApp.origin+'/api/session')).json();
+      const post=async(url,value)=>{const response=await fetch(verificationApp.origin+url,{method:'POST',headers:{Origin:verificationApp.origin,'Content-Type':'application/json','X-WorkOS-Session':session.session_token},body:JSON.stringify(value)});return {status:response.status,body:await response.json()};};
+      const task=(await post('/api/tasks',{goal:'Create verified-marker.txt containing exactly verified followed by a newline. Do not commit or run tests.',definition_of_done:['fixture'],repository_path:fixture('verified-source'),verification_draft:{command:`node -e "require('node:assert/strict').equal(require('node:fs').readFileSync('verified-marker.txt','utf8'),'verified\\n');console.log('verification-ok')"`,timeout_seconds:20}})).body;
+      assert.equal((await post(`/api/tasks/${task.id}/runs`,{execution_mode:'real',request_id:'missing-revision',verify:true})).status,400);
+      assert.equal((await post(`/api/tasks/${task.id}/runs`,{execution_mode:'real',request_id:'stale-revision',verify:true,expected_task_revision:2})).status,409);
+      const request={execution_mode:'real',request_id:'verified-real-http',verify:true,expected_task_revision:task.revision};
+      const started=await post(`/api/tasks/${task.id}/runs`,request);assert.equal(started.status,201);
+      assert.equal((await post(`/api/tasks/${task.id}/runs`,request)).body.run.id,started.body.run.id);
+      assert.equal((await post(`/api/tasks/${task.id}/runs`,{execution_mode:'real',request_id:request.request_id})).status,409);
+      await eventually(()=>verificationApp.store.getRun(started.body.run.id).state!=='running',240000);
+      const run=verificationApp.store.getRun(started.body.run.id);const proof=verificationApp.store.getRunEvidence(run.id);
+      writeFileSync(path.join(evidence,'verification-http.json'),JSON.stringify({run,proof},null,2));
+      assert.equal(run.state,'succeeded');assert.equal(run.phase,'test');assert.equal(proof.verification.outcome,'passed');assert.equal(proof.verification.version_match,'match');assert.equal(proof.stages.length,4);assert.equal(verificationApp.store.resourceLock(),null);assert.equal(session.accept,false);assert.equal(session.accepted_delivery,false);
+      pass('verification-pipeline');
+    } finally {await verificationApp.close();}
+    const manifest = { verification_shell: verificationShell(), verification_shell_sha256: sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: `${process.platform}/${process.arch}`, node: process.version, os_release: os.release(), model: 'gpt-6.1-sol', code_sha: git(root, ['rev-parse', 'HEAD']), sources: executionIdentity(), executable, codex_version: version.stdout.trim(), executable_sha256: sha256File(executable), helper, helper_sha256: sha256File(helper), cases, versions: { git: spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout.trim(), rust: spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim() } };
     const manifestPath = path.join(evidence, 'g1.json');
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     assert.ok(g1Cases.every(name => cases[name] === 'passed'));

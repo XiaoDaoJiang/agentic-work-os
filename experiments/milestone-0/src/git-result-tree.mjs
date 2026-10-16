@@ -3,108 +3,95 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, lstat } from 'node:fs/promises';
 
-const execFileAsync = promisify(execFile);
-const SUPPORTED_MODES = new Set(['100644', '100755']);
-
-async function git(workspace, args, { gitExecutable = 'git', env = process.env, encoding = 'utf8' } = {}) {
-  const { stdout } = await execFileAsync(gitExecutable, args, {
-    cwd: path.resolve(workspace),
-    env,
-    encoding,
-    windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024
-  });
-  return stdout;
+const exec = promisify(execFile);
+const limit = 8 * 1024 * 1024;
+const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+const nullPath = process.platform === 'win32' ? 'NUL' : '/dev/null';
+const safeEnv = () => ({...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.toUpperCase().startsWith('GIT_'))),GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:nullPath,GIT_TERMINAL_PROMPT:'0',GIT_ATTR_NOSYSTEM:'1'});
+function decode(bytes) { return new TextDecoder('utf-8',{fatal:true}).decode(bytes); }
+function checkedPath(value) {
+  if (!value || value.includes('\\') || /[\x00-\x1f]/.test(value) || path.posix.isAbsolute(value) || value.split('/').some(x=>x==='..'||x==='.git'||!x)) throw new Error('unsupported Git path');
+  return value;
 }
-
-function parseNameStatusZ(buffer) {
-  const tokens = Buffer.from(buffer).toString('utf8').split('\0').filter((token) => token.length > 0);
-  if (tokens.length % 2 !== 0) throw new Error('unexpected git name-status -z output');
-  const result = [];
-  for (let i = 0; i < tokens.length; i += 2) {
-    const status = tokens[i];
-    const filePath = tokens[i + 1];
-    if (!['A', 'M', 'D', 'T'].includes(status)) throw new Error(`unsupported Git change status ${status}`);
-    result.push({ status, path: filePath });
-  }
-  return result;
-}
-
-function assertRelativeGitPath(filePath) {
-  if (typeof filePath !== 'string' || filePath.length === 0 || filePath.includes('\0')) throw new Error('invalid Git path');
-  if (path.posix.isAbsolute(filePath) || filePath === '..' || filePath.startsWith('../')) throw new Error(`unsafe Git path ${filePath}`);
-  return filePath;
-}
-
-async function withTempIndex(workspace, baseRevision, gitExecutable, operation) {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'm0-git-index-'));
-  const indexPath = path.join(tempRoot, 'index');
-  const env = { ...process.env, GIT_INDEX_FILE: indexPath };
-  try {
-    await git(workspace, ['read-tree', baseRevision], { gitExecutable, env });
-    await git(workspace, ['add', '-A', '--', '.'], { gitExecutable, env });
-    return await operation(env);
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-}
-
-async function indexMode(workspace, filePath, gitExecutable, env) {
-  const output = await git(workspace, ['ls-files', '-s', '-z', '--', filePath], { gitExecutable, env, encoding: null });
-  const record = Buffer.from(output).toString('utf8').split('\0').filter(Boolean);
-  if (record.length !== 1) throw new Error(`expected one index entry for ${filePath}`);
-  const tab = record[0].indexOf('\t');
-  if (tab < 0) throw new Error(`malformed index entry for ${filePath}`);
-  const metadata = record[0].slice(0, tab).split(' ');
-  const mode = metadata[0];
-  if (!SUPPORTED_MODES.has(mode)) throw new Error(`unsupported Git mode ${mode} for ${filePath}`);
-  return mode;
-}
-
-export async function computeResultTreeHash({ workspace, baseRevision, gitExecutable = 'git' }) {
-  if (!workspace || !baseRevision) throw new Error('workspace and baseRevision are required');
-  return withTempIndex(workspace, baseRevision, gitExecutable, async (env) => {
-    const objectFormat = String(await git(workspace, ['rev-parse', '--show-object-format'], { gitExecutable })).trim();
-    if (!['sha1', 'sha256'].includes(objectFormat)) throw new Error(`unsupported Git object format ${objectFormat}`);
-    const resultTreeHash = String(await git(workspace, ['write-tree'], { gitExecutable, env })).trim();
-    if (!/^[0-9a-f]{40}$/.test(resultTreeHash) && !/^[0-9a-f]{64}$/.test(resultTreeHash)) {
-      throw new Error('invalid result tree hash');
+export async function captureWorkspaceVersion({workspace,baseRevision,gitExecutable='git'}) {
+  if (!workspace || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseRevision)) throw new Error('workspace and full baseRevision required');
+  const directory=await mkdtemp(path.join(os.tmpdir(),'m0-git-index-'));
+  const env={...safeEnv(),GIT_INDEX_FILE:path.join(directory,'index')};
+  const git=async (args,actualIndex=false) => (await exec(gitExecutable,['-c','core.hooksPath='+nullPath,'-c','core.fsmonitor=false','-c','core.autocrlf=false','-c','core.attributesFile='+nullPath,...args],{cwd:path.resolve(workspace),env:actualIndex?safeEnv():env,encoding:'buffer',windowsHide:true,timeout:30000,maxBuffer:limit})).stdout;
+  const text=async args=>decode(await git(args)).trim();
+  const head=async()=>{if(await text(['rev-parse','HEAD'])!==baseRevision) throw new Error('workspace HEAD drift');};
+  const indexModes=async()=>{
+    const modes=Object.create(null);
+    for(const record of decode(await git(['ls-files','--stage','-z'],true)).split('\0').filter(Boolean)) {
+      const tab=record.indexOf('\t');const [mode,,stage]=record.slice(0,tab).split(' ');const file=checkedPath(record.slice(tab+1));
+      if(stage!=='0') throw new Error('unmerged index unsupported');
+      modes[file]=mode;
     }
-    return { objectFormat, resultTreeHash };
-  });
-}
-
-export async function collectWorkspaceChanges({ workspace, baseRevision, gitExecutable = 'git' }) {
-  if (!workspace || !baseRevision) throw new Error('workspace and baseRevision are required');
-  const resolvedWorkspace = path.resolve(workspace);
-  return withTempIndex(resolvedWorkspace, baseRevision, gitExecutable, async (env) => {
-    const raw = await git(resolvedWorkspace, ['diff', '--cached', '--name-status', '-z', '--no-renames', baseRevision, '--'], {
-      gitExecutable,
-      env,
-      encoding: null
-    });
-    const changed = parseNameStatusZ(raw);
-    const entries = [];
-    for (const item of changed) {
-      const gitPath = assertRelativeGitPath(item.path);
-      if (item.status === 'D') {
-        entries.push({ op: 'delete', path: gitPath });
-        continue;
+    return modes;
+  };
+  const inspect=async()=>{
+    await head();
+    if(await lstat(path.join(workspace,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
+    const records=decode(await git(['ls-files','--cached','--others','--exclude-standard','-z'])).split('\0').filter(Boolean);
+    const result=Object.create(null); let size=0;
+    for (const file of [...new Set(records)].sort()) {
+      checkedPath(file);
+      if (file.split('/').includes('.gitattributes')) throw new Error('attributes content conversion unsupported');
+      const parts=file.split('/');
+      for(let i=1;i<parts.length;i++) {
+        const parent=path.join(workspace,...parts.slice(0,i));
+        const stat=await lstat(parent).catch(error=>{if(error.code==='ENOENT') return null; throw error;});
+        if(!stat) break;
+        if(stat.isSymbolicLink()||!stat.isDirectory()) throw new Error('reparse or non-directory unsupported');
+        if(await lstat(path.join(parent,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
+        if(await lstat(path.join(parent,'.git')).catch(()=>null)) throw new Error('nested repository unsupported');
       }
-      const mode = await indexMode(resolvedWorkspace, gitPath, gitExecutable, env);
-      const bytes = await readFile(path.join(resolvedWorkspace, ...gitPath.split('/')));
-      entries.push({
-        op: 'upsert',
-        path: gitPath,
-        mode,
-        size: bytes.length,
-        sha256: createHash('sha256').update(bytes).digest('hex'),
-        bytes
-      });
+      const stat=await lstat(path.join(workspace,...parts)).catch(error=>{if(error.code==='ENOENT') return null; throw error;});
+      if(!stat) continue;
+      if(!stat.isFile()||stat.isSymbolicLink()) throw new Error('only ordinary files supported');
+      if(stat.size>limit || records.length>10000) throw new Error('capture size limit exceeded');
+      const bytes=await readFile(path.join(workspace,...parts)); size+=bytes.length; if(size>limit) throw new Error('capture size limit exceeded'); result[file]={sha256:sha(bytes),size:bytes.length};
     }
-    entries.sort((a, b) => Buffer.from(a.path).compare(Buffer.from(b.path)));
-    return entries;
-  });
+    return result;
+  };
+  try {
+    await head();
+    const gitDir=await text(['rev-parse','--absolute-git-dir']);
+    if(await lstat(path.join(gitDir,'info','attributes')).catch(()=>null)) throw new Error('info attributes unsupported');
+    const config=await text(['config','--local','--list']);
+    if(/^(?:filter\.|include\.|includeif\.|extensions\.worktreeconfig=|core\.(?:autocrlf=(?!false)|eol=|attributesfile=))/mi.test(config)) throw new Error('local content conversion/filter/include unsupported');
+    const actualModes=await indexModes();
+    await git(['read-tree',baseRevision]);
+    const before=await inspect();
+    await git(['add','-A','--','.']);
+    const resultTreeHash=await text(['write-tree']);
+    const objectFormat=await text(['rev-parse','--show-object-format']);
+    if(!['sha1','sha256'].includes(objectFormat)) throw new Error('unsupported object format');
+    const tree=decode(await git(['ls-tree','-r','-z',resultTreeHash])).split('\0').filter(Boolean);
+    const blobs=new Map();
+    for(const record of tree) {
+      const tab=record.indexOf('\t'); const [mode,type,oid]=record.slice(0,tab).split(' '); const file=checkedPath(record.slice(tab+1));
+      if(!['100644','100755'].includes(mode)||type!=='blob') throw new Error('unsupported Git file mode');
+      if(actualModes[file]&&actualModes[file]!==mode) throw new Error('staged Git mode differs from captured workspace mode');
+      const bytes=await git(['cat-file','blob',oid]);
+      if(!before[file]||sha(bytes)!==before[file].sha256) throw new Error('captured bytes changed or content conversion detected');
+      blobs.set(file,{mode,bytes});
+    }
+    const names=decode(await git(['diff','--name-status','-z','--no-renames',baseRevision,resultTreeHash,'--'])).split('\0').filter(Boolean);
+    const entries=[];
+    for(let i=0;i<names.length;i+=2) {
+      const status=names[i],file=checkedPath(names[i+1]);
+      if(status==='D') entries.push({op:'delete',path:file});
+      else if(['A','M','T'].includes(status)) {const {mode,bytes}=blobs.get(file);entries.push({op:'upsert',path:file,mode,size:bytes.length,sha256:sha(bytes),bytes});}
+      else throw new Error('unsupported Git change status');
+    }
+    const diff=decode(await git(['diff','--binary','--no-ext-diff','--no-textconv','--no-renames',baseRevision,resultTreeHash,'--']));
+    if(JSON.stringify(actualModes)!==JSON.stringify(await indexModes())||JSON.stringify(before)!==JSON.stringify(await inspect())) throw new Error('workspace changed during capture');
+    const manifest=entries.map(({bytes,...entry})=>entry);
+    return {baseRevision,objectFormat,resultTreeHash,manifestSha256:sha(JSON.stringify(manifest)),entries,diff,ignoredPolicy:'Git ignored untracked files excluded; tracked files always included'};
+  } finally { await rm(directory,{recursive:true,force:true}); }
 }
+export async function computeResultTreeHash(options) {const {objectFormat,resultTreeHash}=await captureWorkspaceVersion(options);return {objectFormat,resultTreeHash};}
+export async function collectWorkspaceChanges(options) {return (await captureWorkspaceVersion(options)).entries;}

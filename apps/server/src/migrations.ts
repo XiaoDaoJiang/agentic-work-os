@@ -87,6 +87,12 @@ CREATE TABLE resource_lock (
 ) STRICT;
 INSERT INTO resource_lock SELECT singleton,run_id,NULL,NULL,facts_json FROM old_resource_lock;
 DROP TABLE old_resource_lock;
+` }, { version: 4, name: 'verification_evidence', sql: `
+CREATE TABLE stage_observations(run_id TEXT NOT NULL REFERENCES runs(id), stage TEXT NOT NULL, facts_json TEXT NOT NULL CHECK(json_valid(facts_json)), PRIMARY KEY(run_id,stage)) STRICT;
+CREATE TABLE captured_versions(run_id TEXT NOT NULL REFERENCES runs(id), point TEXT NOT NULL CHECK(point IN ('before','after')), version_json TEXT NOT NULL CHECK(json_valid(version_json)), PRIMARY KEY(run_id,point)) STRICT;
+CREATE TABLE verification_results(run_id TEXT PRIMARY KEY REFERENCES runs(id), result_json TEXT NOT NULL CHECK(json_valid(result_json))) STRICT;
+CREATE TABLE stage_output(run_id TEXT NOT NULL REFERENCES runs(id), sequence INTEGER NOT NULL, stage TEXT NOT NULL, stream TEXT NOT NULL CHECK(stream IN ('stdout','stderr')), text TEXT NOT NULL, PRIMARY KEY(run_id,sequence)) STRICT;
+${['stage_observations','captured_versions','verification_results','stage_output','execution_facts'].map(table => `CREATE TRIGGER immutable_${table}_update BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(ABORT,'evidence is immutable'); END; CREATE TRIGGER immutable_${table}_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT,'evidence is immutable'); END;`).join('\n')}
 ` }];
 
 export function migrate(db: DatabaseSync): void {
