@@ -11,7 +11,7 @@
 |---|---|---|---|
 | FMVP-01 | 可持久化 Task + mock Run 控制面 | DONE（Windows 本机 mock） | 见 [实际验收](../mvp/01-fmvp-01-implementation.md)；不外推其他平台 |
 | FMVP-02 | 首个 profile 的真实 Codex 执行、观察与取消 | DONE（当前 Windows profile） | [实施与证据](../mvp/02-fmvp-02-implementation.md)；G1 当前 profile 通过，默认关闭，匹配本机记录才开放 |
-| FMVP-03 | 单一 Verification 与版本明确的结果查看 | IN_PROGRESS | [实施计划](../mvp/03-fmvp-03-implementation.md)；接入真实链路依赖 02，相关执行也受 G1 约束 |
+| FMVP-03 | 单一 Verification 与版本明确的结果查看 | DONE（当前 Windows profile） | [实施与证据](../mvp/03-fmvp-03-implementation.md)；18 项 G1、真实链路与浏览器通过，逐次明确选择验证 |
 | FMVP-04 | 不可变交付物与 Human Review | PLANNED | 依赖 03 产物；真实 Accept/Delivery 要求 G2 |
 | FMVP-05 | 重开恢复、异常阻塞与历史解释 | PLANNED | 基础异常保护随 02/04 实现；本项整合 UX 和回归 |
 | FMVP-06 | Founder 真实任务使用与摩擦修正 | PLANNED | 真实使用依赖已开放能力；不等待外部人数 |
@@ -114,6 +114,6 @@
 
 ## 共同完成定义
 
-每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。当前 FMVP-01 的 Windows 本机 mock 和 FMVP-02 的当前 Windows Codex profile 已完成；其他平台、Verification、Review 和交付未完成。
+每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。当前 FMVP-01 的 Windows 本机 mock、FMVP-02 的当前 Windows Codex profile 和 FMVP-03 单次 Verification 已完成；其他平台、Review 和交付未完成。
 
-下一项为 FMVP-03；03/04 的局部测试可以并行，但不得以并行名义提前激活未验收能力。无需在本文件之前再增加一轮全面 PM 文档。
+下一项为 FMVP-04；复用现有 Artifact、Change Package 与重放候选，按 G2 验收后开放 Accept/Delivery。无需在本文件之前再增加一轮全面 PM 文档。

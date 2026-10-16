@@ -2,8 +2,8 @@
 
 > 更新：2026-10-16
 > 授权：FOUNDER_MVP_DEVELOPMENT_ALLOWED  
-> 实现状态：FMVP-01 / FMVP-02 DONE，限定当前 Windows 本机 profile
-> 下一项：FMVP-03 单一 Verification；Accept / Delivery 仍关闭
+> 实现状态：FMVP-01 / FMVP-02 / FMVP-03 DONE，限定当前 Windows 本机 profile
+> 下一项：FMVP-04 封存交付物与 Human Review；Accept / Delivery 仍关闭
 
 ## 最少阅读
 
@@ -18,7 +18,8 @@
 | 写产品 UI / 本地可迁移模型 / WWA / 切片实施计划 | ALLOWED |
 | Task + mock Run 产品实现 | DONE；启动方式见根 README，证据见 FMVP-01 验收记录 |
 | 真实 Codex 产品接入 | DONE；当前 Windows profile 的 G1 与应用/真实 UI 已验收，见 [FMVP-02](./02-fmvp-02-implementation.md) |
-| 对用户开放真实 Agent 执行 | GATED；默认关闭，仅匹配本地 G1 manifest 时开放当前 profile |
+| 单次 Verification 与版本明确的 Diff | DONE；真实命令、前后捕获、异常与重开读取已验收，见 [FMVP-03](./03-fmvp-03-implementation.md) |
+| 对用户开放真实 Agent / Verification | GATED；默认关闭，仅匹配当前本地 G1 manifest 时开放当前 profile，验证还需逐次明确选择 |
 | 对用户开放真实 Accept / Accepted Delivery | DISABLED；等待 G2 |
 | 外部发布 | NOT_AUTHORIZED；不是本次分支准备范围 |
 
