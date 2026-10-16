@@ -64,6 +64,7 @@ setInterval(() => {}, 1000);
     await service.stop();
     service = await startTestService(join(directory, 'data'), port);
     await page.goto(normalURL);
+    await page.reload();
     await expect(page.getByTestId('run-state')).toHaveText('Agent 已退出 · 尚未验证');
     expect(await (await context.request.get(`${service.origin}/api/runs/${normal.id}/logs`)).json()).toEqual(saved);
 
@@ -84,8 +85,10 @@ setInterval(() => {}, 1000);
     await service.stop('SIGKILL');
     service = await startTestService(join(directory, 'data'), port);
     await page.goto(interruptedURL);
+    await page.reload();
     await expect(page.getByTestId('run-state')).toHaveText('停止状态未知 · 资源保持锁定');
     await expect(page.getByRole('alert')).toContainText('已阻止新运行');
+    await page.getByLabel('执行方式').selectOption('mock');
     await expect(page.getByRole('button', { name: '启动 mock Run', exact: true })).toBeDisabled();
     await page.getByLabel('执行方式').selectOption('real');
     await expect(page.getByRole('button', { name: '启动 Codex Run', exact: true })).toBeDisabled();

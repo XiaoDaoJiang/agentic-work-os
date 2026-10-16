@@ -2,11 +2,13 @@
 
 项目原生的人机协同工作控制面：组织目标、调用本地 Coding Agent、审核交付物，并保留可恢复的工作历史。
 
-## 当前阶段：FMVP-01 已通过本机验收，FMVP-02 接入中
+## 当前阶段：FMVP-02 已通过当前 Windows profile 验收
 
-当前实现分支为 `feat/fmvp-01-task-mock-run`，目标基线为 `mvp/founder-foundation`。2026-10-16 在 Windows / Node 24.16.0 完成 Task + mock Run 验收。真实 Codex、Verification、Accept 和 Delivery 的产品入口仍关闭；这不是原 Product / Technical Gate PASS。
+当前实现分支为 `codex/fmvp-02-g1-execution`，目标基线为 `mvp/founder-foundation`。2026-10-16 在 Windows x64 / Node 24.16.0 完成 FMVP-01 和 FMVP-02 验收。真实 Codex 仅在本机 G1 记录匹配时开放，默认仍为 mock；Verification、Accept 和 Delivery 仍关闭。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
 
 已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
+
+真实路径支持独立 Git 工作副本、Codex 输出持久化、取消与未知资源持锁。正常退出仅显示“Agent 已退出 · 尚未验证”，Task 不会因此变为 done。
 
 ## 启动
 
@@ -19,7 +21,16 @@ npm run dev
 
 浏览器打开 `http://127.0.0.1:4317`。再次启动已构建的应用可使用 `npm start`。数据默认保存于仓库内 `.workos/`；关闭页面不清除历史。通过 `WORKOS_DATA_DIR` 指定其他本地目录，`WORKOS_PORT` 指定端口。同一数据目录只允许一个服务持有。
 
-所有运行均明确标记 `mock`。仓库路径和 Verification 草稿只保存、不执行；模拟成功不会把 Task 标为真实交付 done。
+默认运行明确标记 `mock`，不读取用户仓库。Verification 草稿只保存、不执行；模拟成功不会把 Task 标为真实交付 done。
+
+本机已验收 profile 可显式启用真实执行：
+
+```powershell
+$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-02/workos-g1-LPqVqy/g1.json).Path
+npm start
+```
+
+页面仍默认 mock，保存 Task 后可选择 Codex。要求干净的普通 Git 根仓库，不支持 submodule；独立工作副本最长执行三分钟，当前不支持 Agent 自行 commit。证据只适用于本机当前代码、CLI、helper 与环境；缺失或不匹配时关闭真实能力。重新验收、回退与限制见 [FMVP-02 记录](docs/mvp/02-fmvp-02-implementation.md)。
 
 ## 验证
 
@@ -38,13 +49,11 @@ $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = 'C:\Program Files\Google\Chrome\Appli
 npm run test:e2e
 ```
 
-测试使用临时数据目录。当前 Playwright 1.52 的 Node 24 ESM loader 会挂起；测试入口仅为纯 `.mjs` 测试关闭该转换器，应用 TypeScript 构建不受影响。验收记录见 [FMVP-01](docs/mvp/01-fmvp-01-implementation.md)。
+测试使用临时数据目录。真实 UI 测试需要有效的 `WORKOS_G1_EVIDENCE`，会真实调用 Codex；未提供时跳过，不计为真实验收通过。当前 Playwright 1.52 的 Node 24 ESM loader 会挂起；测试入口仅为纯 `.mjs` 测试关闭该转换器，应用 TypeScript 构建不受影响。验收记录见 [FMVP-01](docs/mvp/01-fmvp-01-implementation.md)和 [FMVP-02](docs/mvp/02-fmvp-02-implementation.md)。
 
 ## 下一项
 
-[FMVP-02](docs/mvp/02-fmvp-02-implementation.md) 先在一次性 Git 仓库接入真实 Codex，复用 Rust Runner 和运行归属候选。满足当前环境的 G1 条件后才开放用户真实任务；G2 继续控制审核接受与交付。
-
-已用桌面内置 CLI 和 `gpt-6.1-sol` 跑通真实诊断，核对文件产物及安全退出；尚未开放 UI 中的真实执行。命令、版本差异、历史失败与剩余接线见上述记录。
+[FMVP-03](docs/pm/70-mvp-wwa-backlog.md) 接入单一 Verification 与版本明确的结果查看。FMVP-02 的 G1 仅开放当前 Windows Codex profile；G2 继续控制审核接受与交付。下一切片开始前读取其 WWA，并复用现有运行和资源边界。
 
 | 入口 | 内容 |
 |---|---|
