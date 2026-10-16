@@ -43,7 +43,7 @@ async function native(name, { invalidConfig = false, timeout = 180000, cancel = 
     const nonce = randomUUID();
     const receipt = path.join(evidence, `${name}.receipt.json`);
     const invocation = codexInvocation(cwd, prompt, 'gpt-6.1-sol');
-    if (invalidConfig) invocation.argv.unshift('--config', 'model_reasoning_effort="g1-invalid-effort"');
+    if (invalidConfig) invocation.argv.splice(invocation.argv.indexOf('--'), 0, '--config', 'model_provider="g1-fixture-missing-provider"');
     const req = path.join(evidence, `${name}.request.json`);
     writeFileSync(req, JSON.stringify({ start: { kind: 'start', protocol: 'local-runner-jsonl-v0', request_id: `start-${id}`, run_id: id, program: executable, argv: invocation.argv, cwd, env: { inheritance_policy: 'allowlist', inherit_names: invocation.inheritNames, overrides: {}, unset: [] }, timeout_ms: timeout }, runtime_id: randomUUID(), spawn_nonce: nonce, repository_identity: repository.repositoryIdentity, base_revision: git(cwd, ['rev-parse', 'HEAD']), helper_revision: git(root, ['rev-parse', 'HEAD']), receipt_path: receipt }));
     const child = spawn(helper, [req], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });

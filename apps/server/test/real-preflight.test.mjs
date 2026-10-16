@@ -107,3 +107,28 @@ test('application revalidates activation evidence before each actual start', asy
         await app.close();
     }
 });
+
+// Git can leave descendants when its synchronous timeout kills only the command root.
+test('Git preparation timeout retains durable lock and blocks new execution', async t => {
+    const { default: childProcess } = await import('node:child_process');
+    const { syncBuiltinESMExports } = await import('node:module');
+    const { directory, store, task, profile } = fixture(t);
+    const execute = childProcess.execFileSync;
+    childProcess.execFileSync = (program, args, options) => {
+        if (program === 'git' && args.includes('clone')) throw Object.assign(new Error('fixture Git timeout'), { code: 'ETIMEDOUT', signal: 'SIGTERM' });
+        return execute(program, args, options);
+    };
+    syncBuiltinESMExports();
+    const executor = new RealExecutor(store, join(directory, 'runs'), profile);
+    try {
+        const result = await executor.start(task.id, 'git-timeout-request');
+        assert.equal(result.run.state, 'interrupted');
+        assert.equal(result.run.terminal_reason, 'preparation_resources_unknown');
+        assert.equal(store.resourceLock().run_id, result.run.id);
+        assert.throws(() => store.startRun(task.id, { execution_mode: 'mock', scenario: 'success', request_id: 'blocked-by-git-timeout' }), /资源/);
+    } finally {
+        childProcess.execFileSync = execute;
+        syncBuiltinESMExports();
+        await executor.close();
+    }
+});

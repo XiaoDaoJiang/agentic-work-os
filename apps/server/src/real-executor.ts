@@ -103,7 +103,7 @@ export class RealExecutor {
                 assertBaseline(execution.workspace_path, source.head);
             }
             catch {
-                this.store.finishRealRun(result.run.id, 'failed', 'prepare_failed_no_process', { resource_state: 'safe', resource_lock: 'releasable', reason: 'preflight_failed_before_spawn' }, true);
+                this.store.finishRealRun(result.run.id, 'interrupted', 'preparation_resources_unknown', { resource_state: 'unknown', resource_lock: 'held', reason: 'git_preparation_failed_no_agent_spawned' }, false);
                 return { run: this.store.getRun(result.run.id), replay: false };
             }
             try {
