@@ -95,7 +95,7 @@ function App() {
   const [selection, setSelection] = useState(readLocation);
   const [mode, setMode] = useState<'mock' | 'real'>('mock');
   const [capabilities, setCapabilities] = useState<{ real_execution: boolean; codex_profile: { reason: string } }>({ real_execution: false, codex_profile: { reason: '正在读取当前能力' } });
-  const [resourceLock, setResourceLock] = useState<{run_id: string} | null>(null);
+  const [resourceLock, setResourceLock] = useState<{run_id: string | null; task_id: string | null} | null>(null);
   const [scenario, setScenario] = useState<Scenario>('success');
   const [notice, setNotice] = useState(''); const [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState(''); const [busy, setBusy] = useState(false);
@@ -146,7 +146,7 @@ function App() {
       {connectionError && <p role="alert" className="error">{connectionError}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
-      {resourceLock && !active && <p role="alert" className="warning">停止状态尚未确认，资源锁保持。已阻止新运行，请保留历史并检查本地受控进程。没有自动重试或强制解锁。<button type="button" className="link" onClick={() => { const locked = runs.find(r => r.id === resourceLock.run_id); if (locked) navigate(locked.task_id, locked.id); }}>查看阻塞 Run</button></p>}
+      {resourceLock && !active && <p role="alert" className="warning">停止状态尚未确认，资源锁保持。已阻止新运行，请保留历史并检查本地受控进程。没有自动重试或强制解锁。<button type="button" className="link" onClick={() => { const locked = runs.find(r => r.id === resourceLock.run_id); if (locked) navigate(locked.task_id, locked.id); else if (resourceLock.task_id) navigate(resourceLock.task_id); }}>{resourceLock.run_id ? '查看阻塞 Run' : '查看准备中的 Task'}</button></p>}
       {active && <div className="active-strip">全局已有一个活动 Run。<button type="button" className="link" onClick={() => navigate(active.task_id, active.id)}>查看活动运行</button></div>}
       <div className="workspace">
         <aside className="panel task-list"><div className="section-heading"><h2>任务</h2><button className="link" type="button" disabled={busy} onClick={() => { attempt.current = null; navigate(''); setNotice(''); }}>＋ 新建 Task</button></div>

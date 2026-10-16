@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../dist/store.js';
-import { RealExecutor, assertBaseline } from '../dist/real-executor.js';
+import { RealExecutor, assertBaseline, receiptMatches } from '../dist/real-executor.js';
 import { executionIdentity, readExecutionProfile, sha256File, g1Cases } from '../dist/execution-profile.js';
 import { createApplication } from '../dist/app.js';
 import { release } from 'node:os';
@@ -26,7 +26,7 @@ test('forward migration preserves v1 mock snapshots, logs and immutable guards',
     old.close();
     const store = new Store(file);
     try {
-        assert.equal(store.schemaVersion(), 2);
+        assert.equal(store.schemaVersion(), 3);
         assert.equal(store.getRun('run').input_snapshot.task.goal, 'old fixture');
         assert.equal(store.getLogs('run')[0].message, '[mock] old history');
         assert.throws(() => store.db.exec("UPDATE runs SET input_snapshot='{}' WHERE id='run'"), /immutable/);
@@ -131,4 +131,94 @@ test('Git preparation timeout retains durable lock and blocks new execution', as
         syncBuiltinESMExports();
         await executor.close();
     }
+});
+
+test('preflight owner is durable before the first Git command and survives restart', async t => {
+    const { default: childProcess } = await import('node:child_process');
+    const { syncBuiltinESMExports } = await import('node:module');
+    const { directory, store, task, profile } = fixture(t);
+    const execute = childProcess.execFileSync;
+    childProcess.execFileSync = (program, args, options) => {
+        if (program === 'git') {
+            assert.equal(store.resourceLock().request_id, 'preflight-timeout-request');
+            throw Object.assign(new Error('fixture preflight timeout'), { code: 'ETIMEDOUT', signal: 'SIGTERM' });
+        }
+        return execute(program, args, options);
+    };
+    syncBuiltinESMExports();
+    const executor = new RealExecutor(store, join(directory, 'runs'), profile);
+    try {
+        await assert.rejects(executor.start(task.id, 'preflight-timeout-request'), error => error.code === 'RESOURCE_HELD');
+        assert.equal(store.listRuns().length, 0);
+        assert.equal(store.resourceLock().task_id, task.id);
+        assert.equal(store.resourceLock().run_id, null);
+        const reopened = new Store(join(directory, 'state.sqlite'));
+        try {
+            reopened.recoverInterrupted();
+            assert.equal(reopened.resourceLock().request_id, 'preflight-timeout-request');
+            assert.throws(() => reopened.startRun(task.id, { execution_mode: 'mock', scenario: 'success', request_id: 'blocked-after-preflight' }), /资源/);
+        } finally { reopened.close(); }
+    } finally {
+        childProcess.execFileSync = execute;
+        syncBuiltinESMExports();
+        await executor.close();
+    }
+});
+
+test('post-Agent Git observation failure cannot release a safe Agent boundary lock', async t => {
+    const { default: childProcess } = await import('node:child_process');
+    const { syncBuiltinESMExports } = await import('node:module');
+    const { EventEmitter } = await import('node:events');
+    const { PassThrough } = await import('node:stream');
+    const { createHash } = await import('node:crypto');
+    const { directory, store, task, profile } = fixture(t);
+    const spawn = childProcess.spawn;
+    const execute = childProcess.execFileSync;
+    const helper = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), pid: 12345, kill() {} });
+    childProcess.spawn = () => helper;
+    syncBuiltinESMExports();
+    const executor = new RealExecutor(store, join(directory, 'runs'), { ...profile, helper_revision: 'fixture-helper' });
+    try {
+        const { run } = await executor.start(task.id, 'post-agent-git-timeout');
+        const execution = run.input_snapshot.execution;
+        const raw = Buffer.from(JSON.stringify({ schema: 'runtime-receipt-v0', root_pid: 23456, process_identity: 'fixture-identity', started_at: 'fixture', run_id: run.id, runtime_instance_id: execution.runtime_id, spawn_nonce: execution.spawn_nonce, helper_revision: execution.helper_revision, containment: { mechanism: 'job_object', boundary_id: `diagnostic:${run.id}` }, workspace: { canonical_path: execution.workspace_path, repository_identity: execution.repository_identity, workspace_id: run.id } }));
+        writeFileSync(execution.receipt_path, JSON.stringify({schema:'runtime-receipt-store-v0',run_id:run.id,spawn_nonce:execution.spawn_nonce,raw_bytes:[...raw],sha256:createHash('sha256').update(raw).digest('hex')}));
+        assert.equal(receiptMatches(run),true);
+        const validEnvelope = readFileSync(execution.receipt_path,'utf8');
+        writeFileSync(execution.receipt_path,JSON.stringify({...JSON.parse(validEnvelope),raw_bytes:raw.toString('utf8')}));
+        assert.equal(receiptMatches(run),false);
+        writeFileSync(execution.receipt_path,validEnvelope);
+        assert.equal(receiptMatches(run),true);
+        helper.stdout.write(JSON.stringify({kind:'started'})+'\n');
+        helper.stdout.write(JSON.stringify({kind:'terminal',trigger:'natural',exit_code:0,resource_state:'safe',resource_lock:'releasable',stdout_drained:true,stderr_drained:true})+'\n');
+        childProcess.execFileSync = () => { throw Object.assign(new Error('fixture post-Agent Git timeout'), {code:'ETIMEDOUT',signal:'SIGTERM'}); };
+        syncBuiltinESMExports();
+        helper.emit('close',0);
+        assert.equal(store.getRun(run.id).state,'interrupted');
+        assert.equal(store.resourceLock().run_id,run.id);
+        assert.equal(store.getExecutionFacts(run.id).resource_state,'unknown');
+        assert.equal(store.getExecutionFacts(run.id).receipt_matches,true);
+    } finally {
+        childProcess.spawn = spawn;
+        childProcess.execFileSync = execute;
+        syncBuiltinESMExports();
+        await executor.close();
+    }
+});
+
+test('v2 held Run owner migrates intact to the preparation-aware v3 lock', t => {
+    const { directory, store, task } = fixture(t);
+    const execution = {profile_id:'fixture',model:'fixture',base_revision:'a'.repeat(40),repository_identity:'fixture',source_path:task.repository_path,workspace_path:join(directory,'workspace'),receipt_path:join(directory,'receipt.json'),runtime_id:'runtime',spawn_nonce:'nonce',timeout_ms:1000};
+    const {run} = store.startRealRun(task.id,'v2-held-request',execution);
+    store.db.exec('DROP TABLE resource_lock; CREATE TABLE resource_lock(singleton INTEGER PRIMARY KEY CHECK(singleton=1),run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),facts_json TEXT NOT NULL CHECK(json_valid(facts_json))) STRICT;');
+    store.db.prepare('INSERT INTO resource_lock VALUES(1,?,?)').run(run.id,JSON.stringify({resource_state:'unknown',resource_lock:'held',reason:'v2'}));
+    store.db.exec('DELETE FROM schema_migrations WHERE version=3; PRAGMA user_version=2;');
+    store.close();
+    const reopened = new Store(join(directory,'state.sqlite'));
+    try {
+        assert.equal(reopened.schemaVersion(),3);
+        assert.equal(reopened.resourceLock().run_id,run.id);
+        assert.equal(reopened.resourceLock().request_id,null);
+        assert.throws(()=>reopened.reservePreparation(task.id,'blocked-by-v2-lock'),/资源/);
+    } finally {reopened.close();}
 });

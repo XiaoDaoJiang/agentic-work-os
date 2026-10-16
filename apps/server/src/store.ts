@@ -110,16 +110,30 @@ export class Store {
     if (!active) return 0;
     this.finishRun(active.id, 'interrupted', active.phase, 'service_restart_no_resume'); return 1;
   }
-  resourceLock(): { run_id: string; facts: unknown } | null {
+  resourceLock(): { run_id: string | null; task_id: string | null; request_id: string | null; facts: unknown } | null {
     const row = this.db.prepare('SELECT * FROM resource_lock WHERE singleton=1').get();
-    return row ? { run_id: String(row.run_id), facts: JSON.parse(String(row.facts_json)) } : null;
+    return row ? { run_id: row.run_id === null ? null : String(row.run_id), task_id: row.task_id === null ? null : String(row.task_id), request_id: row.request_id === null ? null : String(row.request_id), facts: JSON.parse(String(row.facts_json)) } : null;
   }
   assertResourcesAvailable() {
     const lock = this.resourceLock();
-    if (lock) throw new ApiError(409, 'RESOURCE_HELD', '资源事实尚未确认安全；禁止启动新 Run，请保留记录并检查本地进程', undefined, lock.run_id);
+    if (lock) throw new ApiError(409, 'RESOURCE_HELD', '资源事实尚未确认安全；禁止启动新 Run，请保留记录并检查本地进程', undefined, lock.run_id ?? undefined);
   }
   recordResourceFacts(id: string, facts: Record<string, unknown>) {
     this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);
+  }
+  reservePreparation(taskId: string, requestId: string): Task {
+    return this.transaction(() => {
+      this.assertResourcesAvailable();
+      const active = this.activeRun();
+      if (active) throw new ApiError(409, 'ACTIVE_RUN', '全局已有活动 Run', undefined, active.id);
+      const task = this.getTask(taskId);
+      this.db.prepare('INSERT INTO resource_lock VALUES (1,NULL,?,?,?)').run(taskId, requestId, JSON.stringify({resource_state:'unknown',resource_lock:'held',reason:'before_git_preflight'}));
+      return task;
+    });
+  }
+  failPreparation(requestId: string, resourcesConfirmed: boolean) {
+    if (resourcesConfirmed) this.db.prepare('DELETE FROM resource_lock WHERE run_id IS NULL AND request_id=?').run(requestId);
+    else this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id IS NULL AND request_id=?').run(JSON.stringify({resource_state:'unknown',resource_lock:'held',reason:'git_preflight_unconfirmed_no_agent_spawned'}),requestId);
   }
   replayRealRun(taskId: string, requestId: string): Run | null {
     const row = this.db.prepare('SELECT * FROM runs WHERE request_id=?').get(requestId);
@@ -131,7 +145,8 @@ export class Store {
     return this.transaction(() => {
       const existing = this.replayRealRun(taskId, requestId);
       if (existing) return { run: existing, replay: true };
-      this.assertResourcesAvailable();
+      const reservation = this.resourceLock();
+      if (reservation && !(reservation.run_id === null && reservation.task_id === taskId && reservation.request_id === requestId)) this.assertResourcesAvailable();
       const active = this.activeRun();
       if (active) throw new ApiError(409, 'ACTIVE_RUN', '全局已有活动 Run', undefined, active.id);
       const task = this.getTask(taskId); const id = `run_${randomUUID()}`;
@@ -139,7 +154,9 @@ export class Store {
       const snapshot: Run['input_snapshot'] = { snapshot_version: 1, execution_mode: 'real', scenario: 'success', task, execution };
       this.db.prepare("INSERT INTO runs VALUES (?,?,?,'success','real','running','prepare',?,?,NULL,NULL)")
         .run(id, taskId, requestId, JSON.stringify(snapshot), now());
-      this.db.prepare('INSERT INTO resource_lock VALUES (1,?,?)').run(id, JSON.stringify({ resource_state: 'unknown', resource_lock: 'held', reason: 'before_spawn' }));
+      const facts = JSON.stringify({ resource_state: 'unknown', resource_lock: 'held', reason: 'before_spawn' });
+      if (reservation) this.db.prepare('UPDATE resource_lock SET run_id=?,task_id=NULL,request_id=NULL,facts_json=? WHERE singleton=1').run(id,facts);
+      else this.db.prepare('INSERT INTO resource_lock VALUES (1,?,NULL,NULL,?)').run(id, facts);
       this.log(id, '输入已冻结；资源锁已持久化。仅执行 Agent 阶段，未执行 Verification。');
       return { run: this.getRun(id), replay: false };
     });

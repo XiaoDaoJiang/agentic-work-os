@@ -240,11 +240,13 @@ try {
     finally {
         await receiptApp.close();
     }
-    const unit = spawnSync(process.execPath, ['--test', 'apps/server/test/real-execution.test.mjs', 'apps/server/test/api.test.mjs'], { cwd: root, encoding: 'utf8', windowsHide: true });
+    const unit = spawnSync(process.execPath, ['--test', 'apps/server/test/real-execution.test.mjs', 'apps/server/test/real-preflight.test.mjs', 'apps/server/test/api.test.mjs'], { cwd: root, encoding: 'utf8', windowsHide: true });
     writeFileSync(path.join(evidence, 'unit-tests.txt'), unit.stdout + unit.stderr);
     assert.equal(unit.status, 0);
     pass('idempotency');
     pass('request-protection');
+    pass('preparation-lock');
+    pass('post-run-git-failure');
     const app = await createApplication({ databasePath: path.join(directory, 'http.sqlite'), port: 0, diagnostic });
     try {
         const session = await (await fetch(app.origin + '/api/session')).json();

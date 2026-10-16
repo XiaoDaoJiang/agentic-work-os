@@ -76,6 +76,17 @@ CREATE TRIGGER immutable_terminal BEFORE UPDATE ON runs WHEN OLD.state!='running
 BEGIN SELECT RAISE(ABORT, 'terminal run is immutable'); END;
 CREATE TRIGGER immutable_log_update BEFORE UPDATE ON run_logs BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
 CREATE TRIGGER immutable_log_delete BEFORE DELETE ON run_logs BEGIN SELECT RAISE(ABORT, 'logs are append-only'); END;
+` }, { version: 3, name: 'durable_preparation_owner', sql: `
+ALTER TABLE resource_lock RENAME TO old_resource_lock;
+CREATE TABLE resource_lock (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1), run_id TEXT UNIQUE REFERENCES runs(id),
+ task_id TEXT REFERENCES tasks(id), request_id TEXT,
+ facts_json TEXT NOT NULL CHECK(json_valid(facts_json)),
+ CHECK((run_id IS NOT NULL AND task_id IS NULL AND request_id IS NULL)
+ OR (run_id IS NULL AND task_id IS NOT NULL AND request_id IS NOT NULL))
+) STRICT;
+INSERT INTO resource_lock SELECT singleton,run_id,NULL,NULL,facts_json FROM old_resource_lock;
+DROP TABLE old_resource_lock;
 ` }];
 
 export function migrate(db: DatabaseSync): void {

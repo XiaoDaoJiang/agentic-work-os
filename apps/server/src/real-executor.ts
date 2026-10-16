@@ -13,7 +13,7 @@ export function gitEnvironment() {
     return { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith('GIT_'))), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: 'NUL', GIT_TERMINAL_PROMPT: '0' };
 }
 function git(cwd: string, args: string[]) {
-    return execFileSync('git', ['-c', 'core.hooksPath=NUL', '-C', cwd, ...args], { encoding: 'utf8', env: gitEnvironment(), windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024 }).trim();
+    return execFileSync('git', ['-c', 'core.hooksPath=NUL', '-c', 'core.fsmonitor=false', '-C', cwd, ...args], { encoding: 'utf8', env: gitEnvironment(), windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024 }).trim();
 }
 export function assertBaseline(source: string, base?: string) {
     const canonical = realpathSync(source);
@@ -30,9 +30,14 @@ export function receiptMatches(run: Run): boolean {
     try {
         const x = run.input_snapshot.execution!;
         const envelope = JSON.parse(readFileSync(x.receipt_path, 'utf8'));
+        if (!Array.isArray(envelope.raw_bytes) || !envelope.raw_bytes.every((byte: unknown) => typeof byte === 'number' && Number.isInteger(byte) && byte >= 0 && byte <= 255)) return false;
         const raw = Buffer.from(envelope.raw_bytes);
         const receipt = JSON.parse(raw.toString('utf8'));
-        return envelope.schema === 'runtime-receipt-store-v0' && envelope.run_id === run.id && envelope.spawn_nonce === x.spawn_nonce
+        return envelope.schema === 'runtime-receipt-store-v0' && receipt.schema === 'runtime-receipt-v0'
+            && Number.isInteger(receipt.root_pid) && receipt.root_pid > 0 && receipt.root_pid <= 0xffffffff
+            && typeof receipt.process_identity === 'string' && !!receipt.process_identity.trim()
+            && typeof receipt.started_at === 'string' && !!receipt.started_at.trim()
+            && envelope.run_id === run.id && envelope.spawn_nonce === x.spawn_nonce
             && createHash('sha256').update(raw).digest('hex') === envelope.sha256
             && receipt.run_id === run.id && receipt.runtime_instance_id === x.runtime_id && receipt.spawn_nonce === x.spawn_nonce
             && realpathSync(receipt.workspace.canonical_path) === realpathSync(x.workspace_path)
@@ -72,15 +77,26 @@ export class RealExecutor {
         this.preparing = true;
         let prepared!: () => void;
         this.preparationDone = new Promise(resolve => { prepared = resolve; });
+        let gitConfirmed = true;
+        let reserved = false;
         try {
-            const task = this.store.getTask(taskId);
-            const source = assertBaseline(task.repository_path);
+            const task = this.store.reservePreparation(taskId, requestId);
+            reserved = true;
+            const canonical = realpathSync(task.repository_path);
             if (this.diagnosticRoot) {
-                const within = relative(realpathSync(this.diagnosticRoot), source.canonical);
+                const within = relative(realpathSync(this.diagnosticRoot), canonical);
                 if (within.startsWith('..') || isAbsolute(within))
                     throw new ApiError(403, 'FIXTURE_ONLY', '诊断仅允许本次一次性仓库');
             }
-            const repository = await ensureRepositoryMarker(source.canonical, { execute: (program: string, args: string[], options: object) => promisify(execFile)(program, args, { ...options, env: gitEnvironment() }) });
+            gitConfirmed = false;
+            const source = assertBaseline(canonical);
+            gitConfirmed = true;
+            const repository = await ensureRepositoryMarker(source.canonical, { execute: async (program: string, args: string[], options: object) => {
+                gitConfirmed = false;
+                const result = await promisify(execFile)(program, ['-c', 'core.fsmonitor=false', ...args], { ...options, env: gitEnvironment(), timeout: 30000 });
+                gitConfirmed = true;
+                return result;
+            } });
             if (this.closing)
                 throw new ApiError(503, 'CLOSING', '服务关闭期间不再启动执行');
             const directory = join(this.directory, randomUUID());
@@ -113,6 +129,11 @@ export class RealExecutor {
                 this.store.finishRealRun(result.run.id, 'interrupted', 'launch_unknown', { resource_state: 'unknown', resource_lock: 'held' }, false);
             }
             return { run: this.store.getRun(result.run.id), replay: false };
+        }
+        catch (error) {
+            if (reserved) this.store.failPreparation(requestId, gitConfirmed || error instanceof ApiError);
+            if (error instanceof ApiError) throw error;
+            throw new ApiError(400, gitConfirmed ? 'REPOSITORY_UNAVAILABLE' : 'RESOURCE_HELD', gitConfirmed ? '无法准备 Git 仓库，请检查本地根目录与访问权限' : 'Git 准备过程异常，资源锁保持；请保留本地证据并检查受控进程');
         }
         finally {
             this.preparing = false;
@@ -204,14 +225,15 @@ export class RealExecutor {
                         if (tail)
                             save(`${stream} ${tail}`);
                     }
-                    const safe = code === 0 && !invalid && !pending.trim() && started && receiptMatches(run) && terminal?.resource_state === 'safe' && terminal.resource_lock === 'releasable' && terminal.stdout_drained === true && terminal.stderr_drained === true;
+                    let safe = code === 0 && !invalid && !pending.trim() && started && receiptMatches(run) && terminal?.resource_state === 'safe' && terminal.resource_lock === 'releasable' && terminal.stdout_drained === true && terminal.stderr_drained === true;
                     let drift = false;
                     try {
                         assertBaseline(x.source_path, x.base_revision);
                         drift = git(x.workspace_path, ['rev-parse', 'HEAD']) !== x.base_revision;
                     }
-                    catch {
+                    catch (error) {
                         drift = true;
+                        if (!(error instanceof ApiError)) safe = false;
                     }
                     const state = !safe ? 'interrupted' : terminal?.trigger === 'cancel' ? 'cancelled' : terminal?.trigger === 'timeout' ? 'failed' : terminal?.exit_code === 0 && !drift ? 'succeeded' : 'failed';
                     this.store.finishRealRun(run.id, state, !safe ? 'resource_unknown' : drift ? 'workspace_drift' : terminal?.trigger === 'timeout' ? 'agent_timeout' : terminal?.trigger === 'cancel' ? 'agent_cancelled' : terminal?.exit_code === 0 ? 'agent_exited_unverified' : 'agent_nonzero', { ...terminal, helper_exit_code: code, receipt_matches: receiptMatches(run), drift, resource_state: safe ? 'safe' : 'unknown', resource_lock: safe ? 'releasable' : 'held' }, safe);
