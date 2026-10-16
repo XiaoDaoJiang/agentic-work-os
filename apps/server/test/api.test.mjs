@@ -142,6 +142,10 @@ test('local protection: host, origin, session, Fetch Metadata, JSON and real cap
     assert.equal(result.status, 403, path); assert.equal(result.data.code, 'CAPABILITY_DISABLED');
   }
   const capabilities = (await request('/api/capabilities')).data;
+  assert.equal(capabilities.codex_profile.available, false);
+  assert.match(capabilities.codex_profile.reason, /G1/);
+  const session = (await request('/api/session')).data;
+  assert.deepEqual(session.codex_profile, capabilities.codex_profile);
   for (const key of ['real_execution', 'verification_execution', 'accept', 'accepted_delivery']) assert.equal(capabilities[key], false);
   assert.equal((await request('/api/tasks')).data.length, 1);
   assert.equal((await request('/api/runs')).data.length, 0);
@@ -171,7 +175,7 @@ test('second service sharing the DB cannot interrupt a live mock; port failure r
   const other = await createApplication({ databasePath: otherDb, port: 0 }); await other.close();
 });
 
-test('product sources have no process launch, real CLI adapter or shell execution import', () => {
+test('product sources retain the no-process-launch and no-credential-access barrier', () => {
   const source = readdirSync(new URL('../src/', import.meta.url)).filter(n => n.endsWith('.ts'))
     .map(n => readFileSync(new URL(`../src/${n}`, import.meta.url), 'utf8')).join('\n');
   assert.doesNotMatch(source, /(?:node:)?child_process|worker_threads|\beval\s*\(|new Function\b|import\s*\(/);

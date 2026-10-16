@@ -3,6 +3,7 @@ evidence/
 
 # Experiment-local transient files.
 experiments/**/.tmp/
+experiments/milestone-0/native-runner/target/
 
 # Founder MVP local-only data, dependencies and generated output.
 node_modules/

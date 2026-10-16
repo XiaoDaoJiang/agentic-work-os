@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path';
 import { Store, acquireDatabaseMutex } from './store.js';
 import { ApiError } from './contracts.js';
 import { MockExecutor } from './mock-executor.js';
+import { codexProfile } from './codex-adapter.js';
 
 const capabilities = Object.freeze({ execution_mode: 'mock', real_execution: false,
-  verification_execution: false, accept: false, accepted_delivery: false, g1: 'closed', g2: 'closed' });
+  verification_execution: false, accept: false, accepted_delivery: false, g1: 'closed', g2: 'closed', codex_profile: codexProfile });
 const maxBodyBytes = 32 * 1024;
 function readJson(req: IncomingMessage): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {

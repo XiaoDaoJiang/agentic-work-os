@@ -44,6 +44,8 @@ npm run test:e2e
 
 [FMVP-02](docs/mvp/02-fmvp-02-implementation.md) 先在一次性 Git 仓库接入真实 Codex，复用 Rust Runner 和运行归属候选。满足当前环境的 G1 条件后才开放用户真实任务；G2 继续控制审核接受与交付。
 
+已用桌面内置 CLI 和 `gpt-6.1-sol` 跑通真实诊断，核对文件产物及安全退出；尚未开放 UI 中的真实执行。命令、版本差异、历史失败与剩余接线见上述记录。
+
 | 入口 | 内容 |
 |---|---|
 | [MVP 开工入口](docs/mvp/README.md) | 当前顺序、第一切片计划和可直接交给 Codex 的提示 |
