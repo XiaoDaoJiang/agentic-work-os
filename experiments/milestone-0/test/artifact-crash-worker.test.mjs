@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdtemp, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { openArtifactExperimentDb } from '../src/artifact-db.mjs';
@@ -29,13 +30,30 @@ async function setup() {
   return {root,store,dbPath};
 }
 
-function runCrash({store,dbPath,point}) {
-  return new Promise((resolve)=>{
-    const child=spawn(process.execPath,[worker.pathname,'--store',store.root,'--db',dbPath,'--fault-point',point],{stdio:['ignore','pipe','pipe']});
+async function runCrash({store,dbPath,point}) {
+  const exit = await new Promise((resolve,reject)=>{
+    const child=spawn(process.execPath,[fileURLToPath(worker),'--store',store.root,'--db',dbPath,'--fault-point',point],{stdio:['ignore','pipe','pipe'],windowsHide:true});
     let stdout='',stderr='';
-    child.stdout.on('data',d=>stdout+=d); child.stderr.on('data',d=>stderr+=d);
-    child.on('close',(code,signal)=>resolve({code,signal,stdout,stderr}));
+    let reached=false,killed=false;
+    const timeout=setTimeout(()=>{
+      child.kill('SIGKILL');
+      reject(new Error(`Timed out waiting for crash at ${point}: ${stderr}`));
+    },10000);
+    child.stdout.on('data',d=>{
+      stdout+=d;
+      if(!reached && stdout.split('\n').includes(`fault-point:${point}`)){
+        reached=true;
+        killed=child.kill('SIGKILL');
+      }
+    });
+    child.stderr.on('data',d=>stderr+=d);
+    child.on('error',error=>{clearTimeout(timeout);reject(error);});
+    child.on('close',(code,signal)=>{clearTimeout(timeout);resolve({code,signal,stdout,stderr,reached,killed});});
   });
+  assert.equal(exit.reached,true,exit.stderr);
+  assert.equal(exit.killed,true,exit.stderr);
+  console.log(JSON.stringify({faultPoint:point,killSent:exit.killed,code:exit.code,signal:exit.signal}));
+  return exit;
 }
 
 for (const point of ['after_flush_close','after_hash']) {

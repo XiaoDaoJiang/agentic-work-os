@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createArtifactStore, sealArtifact } from '../src/artifact-store.mjs';
 import { openArtifactExperimentDb } from '../src/artifact-db.mjs';
+import { writeSync } from 'node:fs';
 
 function parseOptions(args) {
   const out = {};
@@ -21,8 +22,9 @@ const faultPoint = options['fault-point'];
 
 const fault = (point) => {
   if (point !== faultPoint) return;
-  process.kill(process.pid, 'SIGKILL');
-  throw new Error(`SIGKILL did not terminate process at ${point}`);
+  writeSync(1, `fault-point:${point}\n`);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  throw new Error(`Crash wait unexpectedly returned at ${point}`);
 };
 
 await sealArtifact({
