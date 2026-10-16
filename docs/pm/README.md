@@ -1,6 +1,6 @@
 # Agentic Work OS — 研究保留与 Founder MVP 入口
 
-> 更新：2026-09-07  
+> 更新：2026-10-16
 > 当前开发入口：[Founder MVP](../mvp/README.md)  
 > 开工授权：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 历史阶段快照：[Research handoff](../research/2026-09-07-pre-mvp-handoff.md)
@@ -23,7 +23,7 @@
 | `55-cross-platform-runtime-decision.md`、`56-local-runtime-host-decision.md` | 仍有效的技术范围/职责边界 |
 | `57`、`58`、`59`、`61` 决策文件 | 限定范围实验结果；不得外推为整体通过 |
 | `60-gate-execution-index.md` | 本分支分层开放规则与原 Gate 关系 |
-| `70-mvp-wwa-backlog.md` | 当前六个 Founder MVP 开发切片；从 FMVP-01 开始 |
+| `70-mvp-wwa-backlog.md` | 当前六个 Founder MVP 开发切片；FMVP-01 本机验收完成，继续 FMVP-02 |
 
 当前开工所需阅读只限 MVP 入口、范围和 WWA。源证据、PR 与精确 commit 集中在 Research 快照，不再各处复制不同的进度表。
 

@@ -1,9 +1,9 @@
 # Founder MVP — 开工入口
 
-> 日期：2026-09-07  
+> 更新：2026-10-16
 > 授权：FOUNDER_MVP_DEVELOPMENT_ALLOWED  
-> 实现状态：NOT_STARTED；本次只准备分支与前置文档  
-> 首项：FMVP-01；不等待外部用户招募或完整技术 Gate
+> 实现状态：FMVP-01 DONE，限定 Windows 本机 mock 能力验收
+> 当前项：FMVP-02 真实 Codex 接入；未开放真实用户执行
 
 ## 最少阅读
 
@@ -16,7 +16,8 @@
 | 项目 | 状态 |
 |---|---|
 | 写产品 UI / 本地可迁移模型 / WWA / 切片实施计划 | ALLOWED |
-| 产品实现 | NOT_STARTED |
+| Task + mock Run 产品实现 | DONE；启动方式见根 README，证据见 FMVP-01 验收记录 |
+| 真实 Codex 产品接入 | IN_PROGRESS；一次性仓库诊断中，尚非 G1 PASS |
 | 对用户开放真实 Agent 执行 | DISABLED；等待所选 profile 的 G1 |
 | 对用户开放真实 Accept / Accepted Delivery | DISABLED；等待 G2 |
 | 外部发布 | NOT_AUTHORIZED；不是本次分支准备范围 |
@@ -29,9 +30,9 @@ G1/G2 是范围修订中的能力开放条件，不是新增的“任何代码�
 
 若执行环境不兼容某个默认，只修改受影响选择并在实现 PR 说明；不要回到全面选型。已有 M0 测试曾使用 Node 22.16.0 / Rust 1.88.0，但这不是新 UI 依赖版本兼容性保证；新应用必须实际验证并锁定依赖。
 
-建议的新增目录是 `apps/web`、`apps/server`，共享类型仅在实际需要时加入 `packages/`。这些目录尚未创建。不要把 `experiments/` 改名或搬空来伪装产品已经完成。
+产品代码已位于 `apps/web`、`apps/server`，共享类型仅在实际需要时加入 `packages/`。`experiments/` 保留原实验与候选，不把继承代码自动计为已开放产品能力。
 
-## FMVP-01 的实施顺序
+## FMVP-01 已完成的实施顺序
 
 1. 读取当前分支、AGENTS 与 WWA，确认没有未提交用户改动；从 MVP 基线切小功能分支。
 2. 用最少测试固定 Task 与 mock Run 的可观察行为，以及完整输入快照、唯一 ID、持久化和重开恢复。
@@ -51,7 +52,7 @@ FMVP-01 不需要完整 A/B/C、P01、6 类真实异常或三平台进程矩阵�
 
 接入时先核对源文件、测试、版本和使用边界。研究分支后续修复只做经过 review 的定向合入；不得将整个不稳定实验分支盲目合并，也不要在新代码里复制第二份含义相同的状态机。
 
-## 直接交给 Codex 的提示
+## FMVP-01 原实施提示
 
 ```text
 在当前 Agentic Work OS Founder MVP 基线上执行 FMVP-01。

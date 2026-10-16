@@ -1,6 +1,6 @@
 # Agentic Work OS — 开工许可、能力激活与原 Gate 索引
 
-> 更新：2026-09-07  
+> 更新：2026-10-16
 > 新范围依据：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 历史状态集中记录：[Research 交接快照](../research/2026-09-07-pre-mvp-handoff.md)  
 > 本文件是本 MVP 分支的当前治理入口，不宣称 main 已更新。
@@ -44,6 +44,6 @@ G1/G2 的具体判据以范围文档为准，不在此复制另一套。
 
 ## 5. 下一项
 
-直接执行 [FMVP-01](./70-mvp-wwa-backlog.md)：可持久化的 Task + mock Run 最小控制面。其开工不依赖外部 P01、14 天窗口、六类自然异常或其他平台的完整矩阵。
+[FMVP-01](../mvp/01-fmvp-01-implementation.md) 已通过 Windows 本机 mock 验收。继续 [FMVP-02](../mvp/02-fmvp-02-implementation.md) 的真实 Codex 一次性仓库诊断与接入；G1 仍关闭。开工不依赖外部 P01、14 天窗口、六类自然异常或其他平台的完整矩阵。
 
 后续每个切片的实现 PR 记录本项真实验证与能力开关状态。只有对具体能力有证据时才更新该能力状态；任何未知、FAIL 或 INCONCLUSIVE 不得由另一项成功抵消。

@@ -2,11 +2,47 @@
 
 项目原生的人机协同工作控制面：组织目标、调用本地 Coding Agent、审核交付物，并保留可恢复的工作历史。
 
-## 当前阶段：Founder MVP 开发准备完成
+## 当前阶段：FMVP-01 已通过本机验收，FMVP-02 接入中
 
-本分支为 `mvp/founder-foundation`。研究阶段已集中交接，允许开始有限的自用 MVP 开发；这不是原 Product / Technical Gate PASS，也不是应用已经完成。
+当前实现分支为 `feat/fmvp-01-task-mock-run`，目标基线为 `mvp/founder-foundation`。2026-10-16 在 Windows / Node 24.16.0 完成 Task + mock Run 验收。真实 Codex、Verification、Accept 和 Delivery 的产品入口仍关闭；这不是原 Product / Technical Gate PASS。
 
-**下一项：FMVP-01 — Task 创建 → mock Run → 详情/日志 → 本地持久化 → 重开可查看。**
+已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
+
+## 启动
+
+使用 Node 24 LTS。首次安装和启动：
+
+```powershell
+npm ci
+npm run dev
+```
+
+浏览器打开 `http://127.0.0.1:4317`。再次启动已构建的应用可使用 `npm start`。数据默认保存于仓库内 `.workos/`；关闭页面不清除历史。通过 `WORKOS_DATA_DIR` 指定其他本地目录，`WORKOS_PORT` 指定端口。同一数据目录只允许一个服务持有。
+
+所有运行均明确标记 `mock`。仓库路径和 Verification 草稿只保存、不执行；模拟成功不会把 Task 标为真实交付 done。
+
+## 验证
+
+```powershell
+npm test
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+也可使用已有 Chrome 执行界面验收：
+
+```powershell
+$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+npm run test:e2e
+```
+
+测试使用临时数据目录。当前 Playwright 1.52 的 Node 24 ESM loader 会挂起；测试入口仅为纯 `.mjs` 测试关闭该转换器，应用 TypeScript 构建不受影响。验收记录见 [FMVP-01](docs/mvp/01-fmvp-01-implementation.md)。
+
+## 下一项
+
+[FMVP-02](docs/mvp/02-fmvp-02-implementation.md) 先在一次性 Git 仓库接入真实 Codex，复用 Rust Runner 和运行归属候选。满足当前环境的 G1 条件后才开放用户真实任务；G2 继续控制审核接受与交付。
 
 | 入口 | 内容 |
 |---|---|
@@ -19,4 +55,4 @@
 
 研究快照分支：`research/pre-mvp-handoff`。MVP 继承技术汇总 `d543dfa...` 的实验代码，保留在 `experiments/`，不自动升级为已验证生产能力；产品证据仍在原验证分支，以交接文件中的固定链接引用。
 
-本次新增的是文档与分支。应用启动命令将在 FMVP-01 实现并实际验证后补充；目前没有可宣称已完成的产品 UI。
+本机验收不代表其他平台通过，也不代表主线已合并、外部发布或完整真实任务闭环完成。

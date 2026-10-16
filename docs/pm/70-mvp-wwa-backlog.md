@@ -3,14 +3,14 @@
 > 日期：2026-09-07  
 > 开工依据：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 方法：仓库内 `.agents/skills/wwas/SKILL.md` 的 Why / What / Acceptance  
-> 状态：BACKLOG READY；实现未开始；不是原联合 Gate PASS
+> 更新：2026-10-16。FMVP-01 已通过 Windows 本机验收，FMVP-02 接入中；不是原联合 Gate PASS
 
 当前以六个可交付切片推进。切片可以在 mock 边界上独立编写测试/界面，但真实端到端能力存在明确依赖；不为了声称完全独立而隐藏依赖。
 
 | ID | 切片 | 状态 | 依赖 / 开放条件 |
 |---|---|---|---|
-| FMVP-01 | 可持久化 Task + mock Run 控制面 | READY | 仅 G0；立即开始 |
-| FMVP-02 | 首个 profile 的真实 Codex 执行、观察与取消 | PLANNED | 产品接线依赖 01；真实开放要求 G1 |
+| FMVP-01 | 可持久化 Task + mock Run 控制面 | DONE（Windows 本机 mock） | 见 [实际验收](../mvp/01-fmvp-01-implementation.md)；不外推其他平台 |
+| FMVP-02 | 首个 profile 的真实 Codex 执行、观察与取消 | IN_PROGRESS（诊断接入） | 01 已完成；[实施与证据](../mvp/02-fmvp-02-implementation.md)，真实开放要求 G1 |
 | FMVP-03 | 单一 Verification 与版本明确的结果查看 | PLANNED | 接入真实链路依赖 02；相关执行也受 G1 约束 |
 | FMVP-04 | 不可变交付物与 Human Review | PLANNED | 依赖 03 产物；真实 Accept/Delivery 要求 G2 |
 | FMVP-05 | 重开恢复、异常阻塞与历史解释 | PLANNED | 基础异常保护随 02/04 实现；本项整合 UX 和回归 |
@@ -114,6 +114,6 @@
 
 ## 共同完成定义
 
-每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。当前六项都未完成。
+每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。当前仅 FMVP-01 的 Windows 本机 mock 范围完成；其余项不能因 mock 或诊断成功标为 DONE。
 
-先交付 FMVP-01；02 的实验收尾与 03/04 的局部测试可以并行，但不得以并行名义提前激活未验收能力。无需在本文件之前再增加一轮全面 PM 文档。
+FMVP-01 已完成，接着交付 FMVP-02；03/04 的局部测试可以并行，但不得以并行名义提前激活未验收能力。无需在本文件之前再增加一轮全面 PM 文档。
