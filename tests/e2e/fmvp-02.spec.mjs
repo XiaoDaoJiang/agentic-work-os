@@ -39,7 +39,12 @@ setInterval(() => {}, 1000);
       await page.getByRole('button', { name: '创建 Task', exact: true }).click();
       await expect(page.getByText('Task 已保存', { exact: true })).toBeVisible();
       await page.getByLabel('执行方式').selectOption('real');
+      const startedResponse = page.waitForResponse(response => response.request().method() === 'POST'
+        && /\/api\/tasks\/[^/]+\/runs$/.test(new URL(response.url()).pathname), { timeout: 60000 });
       await page.getByRole('button', { name: '启动 Codex Run', exact: true }).click();
+      const response = await startedResponse;
+      expect([200, 201]).toContain(response.status());
+      expect((await response.json()).run.execution_mode).toBe('real');
       await expect(page.getByTestId('run-id')).toBeVisible();
       const id = await page.getByTestId('run-id').textContent();
       const run = await (await context.request.get(`${service.origin}/api/runs/${id}`)).json();

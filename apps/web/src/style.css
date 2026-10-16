@@ -280,6 +280,18 @@ input,textarea,select {
   font-size:13px;
   outline:none;
 }
+.verification-choice label {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.verification-choice input[type=checkbox] {
+  display:inline-block;
+  width:auto;
+  margin:0;
+  padding:0;
+  flex:none;
+}
 textarea {
   resize:vertical;
 }
