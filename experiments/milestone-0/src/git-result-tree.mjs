@@ -19,7 +19,14 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
   if (!workspace || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseRevision)) throw new Error('workspace and full baseRevision required');
   const directory=await mkdtemp(path.join(os.tmpdir(),'m0-git-index-'));
   const env={...safeEnv(),GIT_INDEX_FILE:path.join(directory,'index')};
-  const git=async (args,actualIndex=false) => (await exec(gitExecutable,['-c','core.hooksPath='+nullPath,'-c','core.fsmonitor=false','-c','core.autocrlf=false','-c','core.attributesFile='+nullPath,...args],{cwd:path.resolve(workspace),env:actualIndex?safeEnv():env,encoding:'buffer',windowsHide:true,timeout:30000,maxBuffer:limit})).stdout;
+  const git=async (args,actualIndex=false,input) => {
+    const command=exec(gitExecutable,['-c','core.hooksPath='+nullPath,'-c','core.fsmonitor=false','-c','core.autocrlf=false','-c','core.attributesFile='+nullPath,...args],{cwd:path.resolve(workspace),env:actualIndex?safeEnv():env,encoding:'buffer',windowsHide:true,timeout:30000,maxBuffer:limit+(input===undefined?0:10000*96)});
+    let inputError;
+    if(input!==undefined)command.child.stdin.on('error',error=>{inputError=error;}).end(input);
+    const {stdout}=await command;
+    if(inputError)throw inputError;
+    return stdout;
+  };
   const text=async args=>decode(await git(args)).trim();
   const headRevision=await text(['rev-parse','HEAD']);
   const head=async()=>{if(await text(['rev-parse','HEAD'])!==headRevision) throw new Error('workspace HEAD changed during capture');};
@@ -81,15 +88,27 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
     const objectFormat=await text(['rev-parse','--show-object-format']);
     if(!['sha1','sha256'].includes(objectFormat)) throw new Error('unsupported object format');
     const tree=decode(await git(['ls-tree','-r','-z',resultTreeHash])).split('\0').filter(Boolean);
+    const batch=tree.length?await git(['cat-file','--batch'],false,tree.map(record=>record.slice(0,record.indexOf('\t')).split(' ')[2]).join('\n')+'\n'):Buffer.alloc(0);
+    let offset=0,total=0;
     const blobs=new Map();
     for(const record of tree) {
       const tab=record.indexOf('\t'); const [mode,type,oid]=record.slice(0,tab).split(' '); const file=checkedPath(record.slice(tab+1));
       if(!['100644','100755'].includes(mode)||type!=='blob') throw new Error('unsupported Git file mode');
       if(actualModes[file]&&actualModes[file]!==mode) throw new Error('staged Git mode differs from captured workspace mode');
-      const bytes=await git(['cat-file','blob',oid]);
+      const end=batch.indexOf(10,offset);
+      if(end<0||end-offset>95)throw new Error('invalid Git blob batch header');
+      const header=decode(batch.subarray(offset,end)).match(/^([a-f0-9]{40}|[a-f0-9]{64}) blob (0|[1-9][0-9]{0,6})$/);
+      const size=Number(header?.[2]);
+      if(!header||header[1]!==oid||!Number.isSafeInteger(size)||size>limit)throw new Error('invalid Git blob batch header');
+      offset=end+1;
+      const bytes=batch.subarray(offset,offset+size);
+      if(bytes.length!==size||batch[offset+size]!==10)throw new Error('invalid Git blob batch payload');
+      offset+=size+1;total+=size;
+      if(total>limit)throw new Error('capture size limit exceeded');
       if(!before[file]||sha(bytes)!==before[file].sha256) throw new Error('captured bytes changed or content conversion detected');
       blobs.set(file,{mode,bytes});
     }
+    if(offset!==batch.length)throw new Error('unexpected Git blob batch trailing bytes');
     const names=decode(await git(['diff','--name-status','-z','--no-renames',baseRevision,resultTreeHash,'--'])).split('\0').filter(Boolean);
     const entries=[];
     for(let i=0;i<names.length;i+=2) {

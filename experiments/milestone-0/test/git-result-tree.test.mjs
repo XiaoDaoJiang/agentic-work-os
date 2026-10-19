@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, mkdir, rm, rename, chmod } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import childProcess, { execFile } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { promisify } from 'node:util';
 import { captureWorkspaceVersion, computeResultTreeHash, collectWorkspaceChanges } from '../src/git-result-tree.mjs';
 
@@ -13,9 +14,9 @@ async function git(cwd, args, options = {}) {
   return stdout.trim();
 }
 
-async function createFixture() {
+async function createFixture(objectFormat = 'sha1') {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'm0-cp-git-'));
-  await git(workspace, ['init']);
+  await git(workspace, ['init', '--object-format=' + objectFormat]);
   await git(workspace, ['config', 'user.email', 'm0@example.invalid']);
   await git(workspace, ['config', 'user.name', 'M0']);
   await writeFile(path.join(workspace, 'keep.txt'), 'before\n');
@@ -140,4 +141,70 @@ test('local filter programs, info attributes and includes remain blocked before 
   await rm(path.join(workspace, '.git/info/attributes'));
   await git(workspace, ['config', 'include.path', 'absent-config']);
   await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /local content conversion\/filter\/include unsupported/);
+});
+
+for (const objectFormat of ['sha1', 'sha256']) {
+  test(`capture matches actual Git blob and write-tree bytes with ${objectFormat} objects`, async () => {
+    const { workspace, baseRevision } = await createFixture(objectFormat);
+    const bytes = Buffer.from([0, 255, 13, 10, 1]);
+    await writeFile(path.join(workspace, '.gitattributes'), '*.txt text eol=lf\n*.bin binary\n');
+    await writeFile(path.join(workspace, 'binary.bin'), bytes);
+    await writeFile(path.join(workspace, 'empty.bin'), Buffer.alloc(0));
+    await writeFile(path.join(workspace, 'keep.txt'), 'changed\n');
+    const index = await readFile(path.join(workspace, '.git/index'));
+    const capture = await captureWorkspaceVersion({ workspace, baseRevision });
+    assert.equal(capture.objectFormat, objectFormat);
+    assert.deepEqual(capture.entries.find(entry => entry.path === 'binary.bin').bytes, bytes);
+    assert.deepEqual(capture.entries.find(entry => entry.path === 'empty.bin').bytes, Buffer.alloc(0));
+    const oid = await git(workspace, ['hash-object', '--no-filters', 'binary.bin']);
+    assert.equal(await git(workspace, ['rev-parse', capture.resultTreeHash + ':binary.bin']), oid);
+    const blob = await execFileAsync('git', ['cat-file', 'blob', oid], { cwd: workspace, encoding: 'buffer' });
+    assert.deepEqual(blob.stdout, bytes);
+    assert.deepEqual(await readFile(path.join(workspace, '.git/index')), index);
+    await git(workspace, ['-c', 'core.autocrlf=false', 'add', '.']);
+    assert.equal(await git(workspace, ['write-tree']), capture.resultTreeHash);
+    await writeFile(path.join(workspace, 'keep.txt'), Buffer.from('changed\r\n'));
+    await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /captured bytes changed or content conversion detected/);
+  });
+}
+
+test('capture supports an empty committed tree', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'm0-empty-tree-'));
+  await git(workspace, ['init']);
+  await git(workspace, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'base']);
+  const baseRevision = await git(workspace, ['rev-parse', 'HEAD']);
+  const capture = await captureWorkspaceVersion({ workspace, baseRevision });
+  assert.deepEqual(capture.entries, []);
+  assert.equal(capture.resultTreeHash, await git(workspace, ['rev-parse', 'HEAD^{tree}']));
+});
+
+test('capture rejects malformed batch headers, payloads and trailing bytes from Git', async () => {
+  const { workspace, baseRevision } = await createFixture();
+  const actual = childProcess.execFile, execute = promisify(actual);
+  let transform, batchCalls = 0;
+  const wrapped = (...args) => actual(...args);
+  Object.defineProperty(wrapped, promisify.custom, { value: (...args) => {
+    const pending = execute(...args);
+    const changed = pending.then(result => {
+      if (!args[1].includes('--batch')) return result;
+      batchCalls++; return { ...result, stdout: transform(result.stdout) };
+    });
+    changed.child = pending.child; return changed;
+  } });
+  const editHeader = (bytes, edit) => { const end = bytes.indexOf(10); return Buffer.concat([Buffer.from(edit(bytes.subarray(0, end).toString('utf8'))), bytes.subarray(end)]); };
+  const malformed = [
+    bytes => bytes.subarray(0, 10),
+    bytes => editHeader(bytes, header => '0'.repeat(40) + header.slice(40)),
+    bytes => editHeader(bytes, header => header.replace(' blob ', ' tree ')),
+    bytes => editHeader(bytes, header => header.replace(/\d+$/, '8388609')),
+    bytes => editHeader(bytes, header => header.replace(/\d+$/, '-1')),
+    bytes => bytes.subarray(0, bytes.length - 1),
+    bytes => Buffer.concat([bytes, Buffer.from('extra')])
+  ];
+  childProcess.execFile = wrapped; syncBuiltinESMExports();
+  try {
+    const checked = await import('../src/git-result-tree.mjs?malformed-batch');
+    for (transform of malformed) await assert.rejects(checked.captureWorkspaceVersion({ workspace, baseRevision }), /Git blob batch/);
+    assert.equal(batchCalls, malformed.length);
+  } finally { childProcess.execFile = actual; syncBuiltinESMExports(); }
 });
