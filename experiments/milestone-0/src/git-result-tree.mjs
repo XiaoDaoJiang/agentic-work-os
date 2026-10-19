@@ -35,12 +35,16 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
   let actualModes;
   const inspect=async()=>{
     await head();
-    if(await lstat(path.join(workspace,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
     const records=[...new Set([...decode(await git(['ls-files','--cached','--others','--exclude-standard','-z'])).split('\0').filter(Boolean),...Object.keys(actualModes),...trackedPaths])];
+    const recordPaths=new Set(records);
+    const attributes=async file=>{
+      const stat=await lstat(path.join(workspace,file)).catch(error=>{if(error.code==='ENOENT'||error.code==='ENOTDIR')return null;throw error;});
+      if(stat&&(!recordPaths.has(file)||!stat.isFile()||stat.isSymbolicLink())) throw new Error('attributes file must be captured as an ordinary file');
+    };
+    await attributes('.gitattributes');
     const result=Object.create(null); let size=0;
     for (const file of [...new Set(records)].sort()) {
       checkedPath(file);
-      if (file.split('/').includes('.gitattributes')) throw new Error('attributes content conversion unsupported');
       const parts=file.split('/');
       for(let i=1;i<parts.length;i++) {
         const parent=path.join(workspace,...parts.slice(0,i));
@@ -48,7 +52,7 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
         if(!stat) break;
         if(stat.isSymbolicLink()) throw new Error('reparse unsupported');
         if(!stat.isDirectory()) break;
-        if(await lstat(path.join(parent,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
+        await attributes([...parts.slice(0,i),'.gitattributes'].join('/'));
         if(await lstat(path.join(parent,'.git')).catch(()=>null)) throw new Error('nested repository unsupported');
       }
       const stat=await lstat(path.join(workspace,...parts)).catch(error=>{if(error.code==='ENOENT'||error.code==='ENOTDIR') return null; throw error;});

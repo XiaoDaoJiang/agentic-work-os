@@ -44,7 +44,7 @@ export async function verifyVerification({helper,evidence}) {
  assert.equal(process.platform,'win32');const directory=mkdtempSync(join(tmpdir(),'workos-g1-verification-'));mkdirSync(evidence,{recursive:true});const outcomes={};
  for(const scenario of ['normal','nonzero','timeout','cancel','drift','capture-error','stage-cancel']) {
   const command=scenario==='nonzero'?"node -e \"process.exit(7)\"; Write-Output 'after nonzero'":scenario==='timeout'||scenario==='cancel'?'node long.cjs':scenario==='drift'?"[System.IO.File]::WriteAllText('changed-by-test.txt','changed')":"[Console]::WriteLine('验证 stdout'); [Console]::Error.WriteLine('验证 stderr')";
-  const fixture=await setupVerificationFixture(join(directory,scenario),helper,command,{timeout:scenario==='timeout'?2:10,...(scenario==='capture-error'?{agent:"require('node:fs').writeFileSync('.gitattributes','* text=auto')"}:{})});
+  const fixture=await setupVerificationFixture(join(directory,scenario),helper,command,{timeout:scenario==='timeout'?2:10,...(scenario==='capture-error'?{agent:"const fs=require('node:fs');fs.writeFileSync('.gitattributes','*.txt text eol=lf\\n');fs.writeFileSync('convert.txt','changed\\r\\n')"}:{})});
   const {store,executor,run,workspace}=fixture;
   try {
    if(scenario==='stage-cancel') {const record=store.recordStage.bind(store);store.recordStage=(id,stage,facts)=>{record(id,stage,facts);if(stage==='agent')executor.cancel(id);};}

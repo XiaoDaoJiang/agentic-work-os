@@ -104,6 +104,13 @@ test('real CRLF conversion is rejected without changing the real index', async (
 });
 
 for (const prefix of ['', 'kibana/']) {
+  test(`${prefix}.gitattributes must be an ordinary file`, async () => {
+    const { workspace, baseRevision } = await createFixture();
+    await mkdir(path.join(workspace, prefix + '.gitattributes'), { recursive: true });
+    await writeFile(path.join(workspace, prefix + '.gitattributes/child.txt'), 'not attributes\n');
+    await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /attributes file must be captured as an ordinary file/);
+  });
+
   test(`ignored ${prefix}.gitattributes must be captured before its rules can affect the tree`, async () => {
     const { workspace, baseRevision } = await createFixture();
     if (prefix) await mkdir(path.join(workspace, 'kibana'));

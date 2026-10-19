@@ -33,7 +33,7 @@ test('capture is one immutable tree/blob/diff view and includes untracked, delet
   assert.deepEqual(result.entries.find(x=>x.path==='新.bin').bytes,Buffer.from([0,1,255]));
   assert.equal(git(['show',`${result.resultTreeHash}:old.txt`]),'new'); assert.match(result.diff,/new/);
   writeFileSync(join(root,'old.txt'),'later'); assert.equal(result.entries.find(x=>x.path==='old.txt').bytes.toString(),'new\n');
-  writeFileSync(join(root,'.gitattributes'),'* text=auto\n'); await assert.rejects(trees.captureWorkspaceVersion({workspace:root,baseRevision}),/attributes|conversion/);
+  writeFileSync(join(root,'.gitattributes'),'*.txt text eol=lf\n'); writeFileSync(join(root,'old.txt'),Buffer.from('changed\r\n')); await assert.rejects(trees.captureWorkspaceVersion({workspace:root,baseRevision}),/captured bytes changed or content conversion detected/);
 });
 
 
