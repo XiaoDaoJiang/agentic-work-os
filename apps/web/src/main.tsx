@@ -107,10 +107,13 @@ function ReviewPanel({run,evidence,onChanged,resourcesReady}:{run:Run;evidence:R
     <h3>最终变更</h3>{context?.diff!==null&&context?.diff!==undefined?<pre data-testid="review-diff" className="review-diff">{context.diff||'没有文件变更'}</pre>:<p className="warning">封存变更尚不可读取。</p>}
     <h3>验证结果</h3><pre>{run.input_snapshot.verification?.requested_command}</pre>
     {result&&<p data-testid="verification-result"><strong>{{passed:'命令通过',failed:'命令失败',error:'验证执行错误',timeout:'已确认超时',cancelled:'已取消',interrupted:'资源未知'}[result.outcome]}</strong> · 退出码 {result.exit_code??'未取得'}<br/>{result.version_match==='match'?'验证前后捕获版本一致':'最终版本未被同一验证结果证明'}</p>}
+    {!result&&<p>{evidence?'验证结果尚未形成；不会推断通过。':'正在读取验证证据…'}</p>}
     {result&&result.outcome!=='passed'&&<p className="warning">验证未通过。请结合冻结目标与变更自行判断，接受不会把失败的验证改写为通过。</p>}
     {(['stdout','stderr'] as const).map(stream=><details key={stream}><summary>封存验证 {stream}</summary><pre>{context?.diff!==null?evidence?.output.filter(row=>row.stage==='verification'&&row.stream===stream).map(row=>row.text).join('')||'没有输出':'封存证据不可用'}</pre></details>)}
+    {context&&!context.decision&&<p className="hint">尚无人工决定。{context.package?'封存对象完整性见当前检查结果。':'尚无封存交付物。'}</p>}
     {context?.blockers.map(reason=><p className="warning" key={reason}>{reason}</p>)}
     {context?.decision?<div className="review-decision"><strong data-testid="review-decision">{context.decision.decision==='accept'?'已接受交付物':'已拒绝本次结果'}</strong><p className="hint">{new Date(context.decision.decided_at).toLocaleString('zh-CN')} · 历史决定保持不变</p>
+      <p data-testid="review-next-step" className="notice">下一步 · {!currentRead?'等待读取恢复，当前审核与资源状态无法确认。':context.decision.decision==='reject'?'保留拒绝决定，调整任务后显式发起下一次尝试。':context.delivery_integrity?.value!=='healthy'?'当前交付物不可下载，保留接受记录并检查本地封存对象。':'查看当前完整性，检查并下载交付物。'}</p>
       {context.delivery_integrity&&<p data-testid="delivery-integrity" className={context.delivery_integrity.value==='healthy'?'notice':'error'}>{{healthy:'当前封存对象完整',missing:'当前交付物缺失',corrupt:'当前交付物损坏'}[context.delivery_integrity.value]}。接受记录不会因此改写。</p>}
       {context.decision.decision==='accept'&&<button type="button" className="primary" disabled={busy||!currentRead||gateClosed||resourceHeld||context.delivery_integrity?.value!=='healthy'} onClick={()=>void download()}>{busy?'检查交付物…':'检查并下载交付物'}</button>}
     </div>:<div className="review-actions"><button type="button" className="primary" disabled={busy||acceptBlocked||run.state!=='waiting_review'} onClick={()=>void decide('accept')}>{busy?'检查与提交中…':context?.last_check?.drift==='clear'?'接受交付物':'重新检查并接受'}</button><button type="button" className="danger" disabled={busy||!currentRead||gateClosed||!packageReadable||run.state!=='waiting_review'} onClick={()=>void decide('reject')}>拒绝本次结果</button></div>}
@@ -136,17 +139,17 @@ function RunDetail({ run, onCancel, busy, onChanged, resourcesReady, resourceLoc
   return <section>
     <div className="section-heading"><div><span className="eyebrow">03 / RUN DETAIL</span><h2>运行详情</h2></div><span data-testid="run-state" className={`badge ${run.state}`}>{stateLabel(run)}</span></div>
     <code data-testid="run-id" className="identity">{run.id}</code>
-    <p className="hint">execution_mode={run.execution_mode} · 输入版本 v{run.input_snapshot.task.revision}</p>
+    <p data-testid="current-phase" className="hint">当前阶段 · {phaseLabels[run.phase]}<br/>execution_mode={run.execution_mode} · 输入版本 v{run.input_snapshot.task.revision}</p>
     <section aria-label="本次冻结目标"><h3>本次目标</h3><p className="frozen-goal" data-testid="frozen-goal">{run.input_snapshot.task.goal}</p><ul className="dod-list">{run.input_snapshot.task.definition_of_done.map((item,index)=><li key={index}>{item}</li>)}</ul></section>
     <ol className="phases" aria-label="运行步骤">{(run.execution_mode === 'mock' ? phases : run.input_snapshot.execution?.review_identity?phases:run.input_snapshot.verification ? ['prepare','agent','test'] : ['prepare', 'agent']).map(phase => <li key={phase} className={run.phase === phase ? 'current' : ''}>{phaseLabels[phase]}</li>)}</ol>
     <p data-testid="historical-resource" className="hint">本次历史执行 · {run.execution_mode==='mock'?'mock 没有 OS 资源证据':!loaded?'正在读取执行事实':error?'历史执行事实暂不可更新，旧记录已过期':facts&&typeof facts==='object'&&'resource_state' in facts?facts.resource_state==='safe'?'当时已确认安全':`当时资源状态 ${String(facts.resource_state)}，不代表当前安全`:'未记录资源事实'}</p>
-    <p data-testid="next-step" className="notice">下一步 · {!resourcesReady?'等待本地服务恢复读取，当前资源状态无法确认。':resourceLock?'先检查当前持锁对象与受控进程，保留本次记录。':run.state==='running'?'观察执行，或请求取消并等待停止确认。':run.state==='waiting_review'?'查看冻结目标、变更与验证，再作出人工决定。':run.state==='completed'?'查看历史决定和当前交付完整性，再检查并下载。':run.execution_mode==='mock'?'本次是模拟结果，没有真实交付；可编辑任务后显式发起下一次尝试。':run.state==='interrupted'?'停止事实未知，保留历史并核对受控进程，不要自动重试。':'保留证据，调整任务后显式发起下一次尝试。'}</p>
+    {run.state!=='completed'&&<p data-testid="next-step" className="notice">下一步 · {!resourcesReady?'等待本地服务恢复读取，当前资源状态无法确认。':resourceLock?'先检查当前持锁对象与受控进程，保留本次记录。':run.state==='running'?'观察执行，或请求取消并等待停止确认。':run.state==='waiting_review'?'查看冻结目标、变更与验证，再作出人工决定。':run.execution_mode==='mock'?'本次是模拟结果，没有真实交付；可编辑任务后显式发起下一次尝试。':run.state==='interrupted'?'停止事实未知，保留历史并核对受控进程，不要自动重试。':'保留证据，调整任务后显式发起下一次尝试。'}</p>}
     {run.state === 'running' && <button type="button" className="danger" onClick={onCancel} disabled={busy}>{run.execution_mode === 'mock' ? '取消 mock Run' : run.input_snapshot.verification ? '请求取消 Run' : '请求取消 Codex'}</button>}
     {run.execution_mode === 'mock' && run.state === 'interrupted' && <p className="warning">服务重启时未完成的 mock 已标为 interrupted，不会自动续跑或补写成功。可保留历史并发起新的尝试。</p>}
     {!['running','waiting_review','completed'].includes(run.state) && <p className="terminal-reason">{run.terminal_reason}<br />{run.execution_mode === 'mock' ? '这不是代码交付或 OS 进程终止证据。' : run.input_snapshot.verification ? '验证仅为命令与捕获版本证据，不代表全部 DoD。Review / Delivery 仍关闭。' : '仅为 Agent 阶段结果；未执行 Verification，尚无 Review 或交付。资源未知时禁止新运行。'}</p>}
     {['waiting_review','completed'].includes(run.state)&&<ReviewPanel key={run.id} run={run} evidence={evidence} onChanged={onChanged} resourcesReady={resourcesReady&&!resourceLock}/> }
-    {!['waiting_review','completed'].includes(run.state)&&<p className="hint">{!evidence?.captures.length?'未形成可读取变更证据。 ':''}{!run.input_snapshot.verification?'本次未执行验证。 ':''}尚无人工决定。尚无封存交付物。</p>}
-    {run.input_snapshot.verification&&!['waiting_review','completed'].includes(run.state) && <section aria-label="验证证据" className="verification-evidence">
+    {loaded&&!['waiting_review','completed'].includes(run.state)&&<p className="hint">{!evidence?.captures.length?'未形成可读取变更证据。 ':''}{!run.input_snapshot.verification?'本次未执行验证。 ':''}尚无人工决定。尚无封存交付物。</p>}
+    {loaded&&run.input_snapshot.verification&&!['waiting_review','completed'].includes(run.state) && <section aria-label="验证证据" className="verification-evidence">
       <h3>本次验证</h3>
       <p className="hint">验证命令只执行一次。以下均为已保存的捕获版本，当前 Workspace 未重新检查。尚无封存 Package 或交付。</p>
       <pre>{run.input_snapshot.verification.requested_command}</pre>
@@ -154,10 +157,12 @@ function RunDetail({ run, onCancel, busy, onChanged, resourcesReady, resourceLoc
       {evidence?.captures.map(capture=><details key={capture.point}><summary>{capture.point==='before'?'验证前 Diff':'验证后 Diff'} · {capture.version.entries.length} 个变更</summary><p className="hint">树版本 <code>{capture.version.resultTreeHash}</code><br />忽略规则：未跟踪且被 Git 忽略的文件不包含；已跟踪文件仍包含。</p><pre>{capture.version.diff || '没有文件变更'}</pre></details>)}
       {(['stdout','stderr'] as const).map(stream=><details key={stream}><summary>验证 {stream}</summary><pre>{evidence?.output.filter(x=>x.stage==='verification'&&x.stream===stream).map(x=>x.text).join('') || '尚无输出'}</pre></details>)}
     </section>}
-    <details open={run.state==='running'||run.execution_mode==='mock'}><summary>执行日志 · {logs.length} 条</summary>
+    {!loaded&&!error&&<p role="status">正在读取执行证据与日志…</p>}
+    {error&&<p role="alert" className="error">执行证据暂不可更新，旧记录已过期。{error}</p>}
+    <details open={run.state==='running'||run.execution_mode==='mock'}><summary>执行日志 · {loaded?`${logs.length} 条`:'正在读取'}</summary>
     <div className="log-heading"><h3>{run.execution_mode === 'mock' ? '持久化模拟日志' : run.input_snapshot.verification ? 'Run 执行日志' : 'Codex 执行日志'}</h3><span>{logs.length} 条 · 自动刷新</span></div>
-    {error && <p role="alert" className="error">日志暂不可更新：{error}。已保存内容保留。</p>}
     <div role="log" aria-label={run.execution_mode === 'mock' ? '持久化模拟日志' : run.input_snapshot.verification ? 'Run 执行日志' : 'Codex 执行日志'} aria-live="polite" className="logs">{logs.map(log => <p key={log.sequence}><time dateTime={log.created_at}>{new Date(log.created_at).toLocaleTimeString('zh-CN', { hour12: false })}</time><span>{log.message}</span></p>)}</div></details>
+    {loaded&&<details><summary>本次历史执行事实</summary><pre>{JSON.stringify(facts,null,2)}</pre></details>}
     {run.input_snapshot.execution && <p className="hint">trusted-local · Workspace 不是 Sandbox<br />基线 <code>{run.input_snapshot.execution.base_revision}</code><br />工作副本 <code>{run.input_snapshot.execution.workspace_path}</code></p>}
     <details><summary>不可变输入快照 · v1</summary><pre data-testid="snapshot">{JSON.stringify(run.input_snapshot, null, 2)}</pre></details>
   </section>;
@@ -203,6 +208,7 @@ function App() {
   const run = runs.find(r => r.id === selection.runId);
   const active = runs.find(r => r.state === 'running'||r.state==='waiting_review');
   const resourcesReady=loaded&&!connectionError;
+  const selectedLoading=!loaded&&!!(selection.taskId||selection.runId);
   const taskRuns = task ? runs.filter(r => r.task_id === task.id) : runs;
   async function start() {
     if (!task||!resourcesReady||resourceLock||active||busy) return; setBusy(true); setError(''); setNotice('');
@@ -230,7 +236,7 @@ function App() {
       {connectionError && <p role="alert" className="error">{connectionError}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
-      <div role={resourceLock?'alert':undefined} data-testid="current-resource" className={!resourcesReady||resourceLock?'warning':'hint'}>{!resourcesReady?'当前资源状态无法确认，暂停新运行。':resourceLock?'当前全局持锁，已阻止新运行。停止状态尚未确认，资源锁保持。请保留历史并检查本地受控进程。':'当前未持锁。'}{resourceLock&&<><span>{!resourcesReady?'上次读取的持锁对象 · ':''}{resourceLock.run_id??resourceLock.task_id??'准备中的请求'}</span><button type="button" className="link" onClick={()=>{const locked=runs.find(r=>r.id===resourceLock.run_id);if(locked)navigate(locked.task_id,locked.id);else if(resourceLock.task_id)navigate(resourceLock.task_id);}}>{resourceLock.run_id?'查看阻塞 Run':'查看准备中的 Task'}</button></>}</div>
+      <div role={resourceLock?'alert':undefined} data-testid="current-resource" className={!resourcesReady||resourceLock?'warning':'hint'}>{!resourcesReady?'当前资源状态无法确认，暂停新运行。':resourceLock?runs.some(item=>item.id===resourceLock.run_id&&item.state==='running')?'当前全局持锁，运行进行中，已阻止新运行。可观察执行或请求取消。':'当前全局持锁，已阻止新运行。停止状态尚未确认，资源锁保持。请保留历史并检查本地受控进程。':'当前未持锁。'}{resourceLock&&<><span>{!resourcesReady?'上次读取的持锁对象 · ':''}{resourceLock.run_id??resourceLock.task_id??'准备中的请求'}</span><button type="button" className="link" onClick={()=>{const locked=runs.find(r=>r.id===resourceLock.run_id);if(locked)navigate(locked.task_id,locked.id);else if(resourceLock.task_id)navigate(resourceLock.task_id);}}>{resourceLock.run_id?'查看阻塞 Run':'查看准备中的 Task'}</button></>}</div>
       {!loaded&&<p data-testid="history-loading" role="status">正在读取本地任务与运行历史…</p>}
       {loaded&&selection.runId&&!run&&<p className="warning">所选 Run 不存在。请从运行历史选择已有记录。</p>}
       {active && <div className="active-strip">全局已有一个活动 Run。<button type="button" className="link" onClick={() => navigate(active.task_id, active.id)}>查看活动运行</button></div>}
@@ -239,7 +245,7 @@ function App() {
           {!loaded ? null : tasks.length === 0 ? <p className="empty-note">还没有 Task。<br />从右侧保存一个清晰的工作目标。</p> : tasks.map(t => <button type="button" key={t.id} className={`task-card ${t.id === task?.id ? 'selected' : ''}`} aria-label={`查看 Task ${t.goal}`} onClick={() => { if (!busy) { attempt.current = null; navigate(t.id, runs.find(r => r.task_id === t.id)?.id); } }}><strong>{t.goal}</strong><small>{{ready:'待执行',review:'待审核',done:'已接受交付',blocked:'资源待核对'}[t.state]} · v{t.revision}</small><code>{t.repository_path}</code></button>)}
           <div className="closed-capabilities"><h3>能力范围</h3><p>{!capabilities.real_execution && <>真实 Agent 执行未开放<br /></>}{capabilities.accept?'封存审核 / 交付已开放':'Accept / Accepted Delivery 关闭'}</p><small>{capabilities.real_execution ? capabilities.accept?'G1 / G2 限当前 profile':'G1 限当前 profile · G2 关闭' : 'G1 / G2 未开放'}<br />原 Product / Technical Gate 不变</small></div>
         </aside>
-        <div className="panel task-panel"><details className="task-editor" open={run?undefined:true}><summary>{run?'编辑下一次运行的任务输入':'任务输入'}</summary><TaskForm key={task?.id ?? 'new'} task={task} onSaved={saved => { setTasks(old => [saved, ...old.filter(t => t.id !== saved.id)]); if (saved.id !== task?.id) navigate(saved.id); setNotice('Task 已保存'); }} /></details>
+        <div className="panel task-panel">{!selectedLoading&&<details className="task-editor" open={run?undefined:true}><summary>{run?'编辑下一次运行的任务输入':'任务输入'}</summary><TaskForm key={task?.id ?? 'new'} task={task} onSaved={saved => { setTasks(old => [saved, ...old.filter(t => t.id !== saved.id)]); if (saved.id !== task?.id) navigate(saved.id); setNotice('Task 已保存'); }} /></details>}
           {task && <section className="run-control"><span className="eyebrow">02 / RUN</span><h2>{mode === 'mock' ? '发起一次模拟' : '交给 Codex 执行'}</h2><code className="identity">{task.id}</code><p className="task-state">{{ready:'ready · 待执行',review:'review · 等待审核本次结果',done:'done · 已接受可重放交付物',blocked:'blocked · 已拒绝结果，资源仍待核对'}[task.state]}</p>
             <label htmlFor="execution-mode">执行方式</label><select id="execution-mode" value={mode} disabled={busy || !!attempt.current} onChange={e => setMode(e.target.value as 'mock' | 'real')}><option value="mock">模拟 · 不读取仓库</option><option value="real" disabled={!capabilities.real_execution}>Codex · 当前 Windows profile</option></select>
             {mode === 'mock' && <><label htmlFor="scenario">模拟场景</label><select id="scenario" value={scenario} disabled={busy || !!attempt.current} onChange={e => setScenario(e.target.value as Scenario)}><option value="success">成功 · 固定模拟步骤</option><option value="failure">失败 · 模拟 Agent 阶段失败</option><option value="cancel">取消 · 固定模拟取消</option></select></>}
@@ -247,7 +253,7 @@ function App() {
             <button type="button" className="primary full" disabled={busy || !resourcesReady || !!active || !!resourceLock || (mode === 'real' && !capabilities.real_execution)} onClick={() => void start()}>{busy ? '操作中…' : mode === 'mock' ? '启动 mock Run' : '启动 Codex Run'}</button><p className="hint">{mode === 'mock' ? '每次新尝试单独保存。取消只停止模拟，不代表 OS 进程树终止。' : 'trusted-local，保留 Codex 原生权限限制。只支持干净的普通 Git 仓库；独立工作副本，Agent 最长 3 分钟，验证使用所选超时。取消需等待停止和输出收尾确认。'}</p>
           </section>}
         </div>
-        <div className="panel run-panel"><RunDetail key={run?.id??'empty'} resourcesReady={resourcesReady} resourceLock={resourceLock} run={run} onCancel={() => void cancel()} busy={busy} onChanged={changed=>setRuns(old=>old.map(item=>item.id===changed.id?changed:item))} />
+        <div className="panel run-panel">{!selectedLoading&&<RunDetail key={run?.id??'empty'} resourcesReady={resourcesReady} resourceLock={resourceLock} run={run} onCancel={() => void cancel()} busy={busy} onChanged={changed=>setRuns(old=>old.map(item=>item.id===changed.id?changed:item))} />}
           <section className="history"><div className="section-heading"><h2>运行历史</h2><span className="hint">{taskRuns.length} 次尝试</span></div>
             {!loaded ? <p className="empty-note">正在读取运行历史…</p> : taskRuns.length === 0 ? <p className="empty-note">尚无运行记录。模拟结束也不会把 Task 标记为 done。</p> : taskRuns.map(r => <button type="button" className={`history-item ${r.id === run?.id ? 'selected' : ''}`} key={r.id} onClick={() => navigate(r.task_id, r.id)}><span><strong>{stateLabel(r)}</strong><small>{new Date(r.created_at).toLocaleString('zh-CN')} · {r.execution_mode === 'mock' ? r.scenario : r.input_snapshot.verification ? 'Codex · 单次验证' : 'Codex · Agent 阶段'}</small><code>{r.id}</code></span><span className="badge mock">{r.execution_mode}</span></button>)}
           </section>

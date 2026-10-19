@@ -10,7 +10,7 @@ const runs=[run('run-first','第一次冻结目标'),run('run-second','第二次
 const emptyEvidence={stages:[],captures:[],output:[],verification:null};
 async function fixture(page){
  const service=await startTestService(mkdtempSync(join(tmpdir(),'workos-05-ui-')));
- const state={hold:null,offline:false,reviewOffline:false,lock:null,writes:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
+ const state={hold:null,offline:false,reviewOffline:false,lock:null,writes:0,reads:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(route.request().method()!=='GET'){state.writes++;await route.fulfill({json:task});return;}
@@ -18,8 +18,10 @@ async function fixture(page){
   if(state.hold&&['/api/tasks','/api/runs','/api/resource-lock'].includes(path))await state.hold;
   if(state.offline){await route.abort('failed');return;}
   if(path.endsWith('/review')&&state.reviewOffline){await route.abort('failed');return;}
-  if(path.endsWith('/facts')&&state.delayedFacts)await state.delayedFacts;
-  const value=path==='/api/tasks'?[task]:path==='/api/runs'?state.runs:path==='/api/resource-lock'?state.lock:path.endsWith('/review')?state.review:path.endsWith('/facts')?state.facts:path.endsWith('/logs')?[]:emptyEvidence;
+  if(path==='/api/tasks')state.reads++;
+  const facts=state.facts;
+  if(path.endsWith('/run-first/facts')&&state.delayedFacts)await state.delayedFacts;
+  const value=path==='/api/tasks'?[task]:path==='/api/runs'?state.runs:path==='/api/resource-lock'?state.lock:path.endsWith('/review')?state.review:path.endsWith('/facts')?facts:path.endsWith('/logs')?[]:emptyEvidence;
   await route.fulfill({json:value});
  });
  return {service,state};
@@ -30,6 +32,8 @@ test('UI injection: loading, stale history and current lock recover without writ
  try{
   await page.goto(`${service.origin}/#task=${task.id}&run=run-first`);
   await expect(page.getByTestId('history-loading')).toBeVisible();
+  await expect(page.locator('form')).toHaveCount(0);
+  await expect(page.getByText('运行记录将在这里出现',{exact:true})).toHaveCount(0);
   await expect(page.getByText('还没有 Task。',{exact:false})).toHaveCount(0);
   release();state.hold=null;
   await expect(page.getByTestId('frozen-goal')).toContainText('第一次冻结目标');
@@ -70,17 +74,22 @@ test('UI injection: review read failure closes stale actions and recovery clears
   state.review={...state.review,decision:{decision:'accept',decided_at:'2026-10-19T00:00:00Z'},delivery_integrity:{value:'healthy'},blockers:['上次检查存在漂移或无法确认'],last_check:{drift:'unavailable',replay:null}};
   const download=page.getByRole('button',{name:'检查并下载交付物',exact:true});
   await expect(download).toBeEnabled();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整');
+  await expect(page.getByTestId('review-next-step')).toContainText('检查并下载');
   state.offline=true;await expect(page.getByTestId('current-resource')).toContainText('无法确认');await expect(download).toBeDisabled();state.offline=false;
   await expect(download).toBeEnabled();
   for(const [value,text] of [['missing','当前交付物缺失'],['corrupt','当前交付物损坏']]){
    state.review={...state.review,delivery_integrity:{value}};
    await expect(page.getByTestId('delivery-integrity')).toContainText(text);await expect(download).toBeDisabled();await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物');
+   await expect(page.getByTestId('review-next-step')).toContainText('不可下载');
   }
   await page.screenshot({path:info.outputPath('accepted-corrupt.png'),fullPage:true});
   await page.setViewportSize({width:375,height:812});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   expect(await page.getByTestId('review-diff').evaluate(node=>node.scrollWidth>node.clientWidth)).toBe(true);
   await page.screenshot({path:info.outputPath('narrow-corrupt.png'),fullPage:true});expect(state.writes).toBe(0);
+  state.review={...state.review,decision:{decision:'reject',decided_at:'2026-10-19T00:00:00Z'},delivery_integrity:null};
+  await expect(page.getByTestId('review-next-step')).toContainText('调整任务');
+  await expect(page.getByTestId('next-step')).toHaveCount(0);
  }finally{await page.close();await service.stop();}
 });
 
@@ -91,11 +100,13 @@ test('UI injection: frozen input, hash selection and keyboard editing stay stabl
   const frozen=page.getByRole('region',{name:'本次冻结目标'});
   await expect(frozen).toContainText('第一次冻结目标标准');
   await expect(page.getByTestId('frozen-goal')).toHaveCount(1);
-  const summary=page.getByText('编辑下一次运行的任务输入',{exact:true});await summary.focus();await page.keyboard.press('Enter');
+  const summary=page.getByText('编辑下一次运行的任务输入',{exact:true});await summary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');
+  await expect(page.getByLabel('目标',{exact:true})).toBeFocused();
   await page.getByLabel('目标',{exact:true}).fill('未保存的编辑');
   await expect.poll(()=>page.getByLabel('目标',{exact:true}).inputValue()).toBe('未保存的编辑');
+  await expect.poll(()=>state.reads).toBeGreaterThanOrEqual(4);await expect(page.getByLabel('目标',{exact:true})).toBeFocused();
   await expect(frozen).not.toContainText('未保存的编辑');
-  const save=page.getByRole('button',{name:'保存 Task 修改',exact:true});await save.focus();await page.keyboard.press('Enter');
+  const save=page.getByRole('button',{name:'保存 Task 修改',exact:true});for(let index=0;index<5;index++)await page.keyboard.press('Tab');await expect(save).toBeFocused();await page.keyboard.press('Enter');
   await expect(page.getByText('Task 已保存',{exact:true})).toBeVisible();expect(state.writes).toBe(1);
   await page.evaluate(()=>{location.hash='task=task-ui&run=run-second';});
   await expect(frozen).toContainText('第二次冻结目标标准');
@@ -107,4 +118,17 @@ test('UI injection: frozen input, hash selection and keyboard editing stay stabl
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath('narrow-history.png'),fullPage:true});
  }finally{await page.close();await service.stop();}
+});
+
+test('UI injection: delayed old facts never replace the selected historical record',async({page})=>{
+ const {service,state}=await fixture(page);let release;state.delayedFacts=new Promise(resolve=>release=resolve);state.runs=runs.map(item=>({...item,execution_mode:'real'}));
+ try{
+  await page.goto(`${service.origin}/#task=${task.id}&run=run-first`);
+  await expect(page.getByTestId('historical-resource')).toContainText('正在读取');
+  await expect(page.getByText('未形成可读取变更证据。',{exact:false})).toHaveCount(0);
+  state.facts=null;await page.evaluate(()=>{location.hash='task=task-ui&run=run-second';});
+  await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实');release();state.delayedFacts=null;
+  await expect.poll(()=>state.reads).toBeGreaterThanOrEqual(4);
+  await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实');await expect(page.getByTestId('frozen-goal')).toHaveText('第二次冻结目标');
+ }finally{release();await page.close();await service.stop();}
 });
