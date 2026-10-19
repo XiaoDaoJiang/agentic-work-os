@@ -4,15 +4,14 @@ import {mkdtempSync,renameSync,readFileSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {setupVerificationFixture} from './verify-verification.mjs';
+import {setupVerificationFixture,waitForFixture} from './verify-verification.mjs';
 
 const helper=resolve('experiments/milestone-0/native-runner/target/debug/diagnostic-runner.exe');
 const request=context=>({request_id:randomUUID(),decision:'accept',package_id:context.package.id,package_sha256:context.package.sha256,note:'recovery regression'});
-const wait=async(fn)=>{const until=Date.now()+60000;while(Date.now()<until){if(fn())return;await new Promise(r=>setTimeout(r,30));}throw new Error('review fixture timed out');};
 test('accepted Package remains recheckable after safe source failure; download still checks current source and bytes',async()=>{
  const root=mkdtempSync(join(tmpdir(),'workos-review-recovery-')),f=await setupVerificationFixture(root,helper,"[Console]::WriteLine('verified')",{review:true});
  try{
-  f.executor.launch(f.run);await wait(()=>f.store.getRun(f.run.id).state!=='running');assert.equal(f.store.getRun(f.run.id).state,'waiting_review');
+  f.executor.launch(f.run);await waitForFixture(()=>f.store.getRun(f.run.id).state!=='running',f.pipelineBudget,'delivery recovery pipeline');assert.equal(f.store.getRun(f.run.id).state,'waiting_review');
   const before=await f.executor.reviewContext(f.run.id);await f.executor.review(f.run.id,request(before));
   const source=join(root,'source'),offline=join(root,'source-offline');renameSync(source,offline);
   await assert.rejects(f.executor.delivery(f.run.id),/本次交付检查未通过/);assert.equal(f.store.resourceLock(),null);assert.equal(f.store.lastResourceCheck(f.run.id).replay,null);

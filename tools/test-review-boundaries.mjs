@@ -4,17 +4,16 @@ import {mkdtempSync,renameSync,readFileSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {setupVerificationFixture} from './verify-verification.mjs';
+import {setupVerificationFixture,waitForFixture} from './verify-verification.mjs';
 
 const helper=resolve('experiments/milestone-0/native-runner/target/debug/diagnostic-runner.exe');
 const request=(context,decision='accept')=>({request_id:randomUUID(),decision,package_id:context.package.id,package_sha256:context.package.sha256,note:'boundary regression'});
-const wait=async(fn)=>{const until=Date.now()+60000;while(Date.now()<until){if(fn())return;await new Promise(r=>setTimeout(r,30));}throw new Error('review fixture timed out');};
 const counts=(store,id)=>Object.fromEntries(['artifacts','run_logs','stage_output','stage_observations','captured_versions','verification_results','execution_facts'].map(table=>[table,store.db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE run_id=?`).get(id).n]));
 
 test('waiting review checks every prerequisite, current drift, concurrent decision and mid-check qualification',async()=>{
  const root=mkdtempSync(join(tmpdir(),'workos-review-boundaries-')),f=await setupVerificationFixture(root,helper,"[Console]::WriteLine('verified')",{review:true});
  try{
-  f.executor.launch(f.run);await wait(()=>f.store.getRun(f.run.id).state!=='running');assert.equal(f.store.getRun(f.run.id).state,'waiting_review');
+  f.executor.launch(f.run);await waitForFixture(()=>f.store.getRun(f.run.id).state!=='running',f.pipelineBudget,'review boundary pipeline');assert.equal(f.store.getRun(f.run.id).state,'waiting_review');
   const context=await f.executor.reviewContext(f.run.id),saved=counts(f.store,f.run.id);let checks=0;
   const check=f.executor.checkPackage.bind(f.executor);f.executor.checkPackage=(...args)=>{checks++;return check(...args);};
   for(const {artifact} of context.artifacts){
@@ -43,7 +42,7 @@ test('Cancel after the first Artifact insert stops sealing before a Package or r
  try{
   const prepare=f.store.db.prepare.bind(f.store.db);let cancelled=false;
   f.store.db.prepare=sql=>{const statement=prepare(sql);if(/^insert into artifacts\(/i.test(sql)){const insert=statement.run.bind(statement);statement.run=(...args)=>{const result=insert(...args);if(!cancelled){cancelled=true;f.executor.cancel(f.run.id);}return result;};}return statement;};
-  f.executor.launch(f.run);await wait(()=>f.store.getRun(f.run.id).state!=='running');
+  f.executor.launch(f.run);await waitForFixture(()=>f.store.getRun(f.run.id).state!=='running',f.pipelineBudget,'seal cancellation pipeline');
   assert.equal(cancelled,true);assert.equal(f.store.getRun(f.run.id).state,'cancelled');assert.deepEqual(f.store.artifacts(f.run.id).map(row=>row.type),['agent_log']);assert.equal(f.store.getReviewDecision(f.run.id),null);assert.equal(f.store.lastResourceCheck(f.run.id),null);assert.equal(f.store.resourceLock(),null);assert.equal(f.store.getTask(f.run.task_id).state,'ready');
  }finally{await f.executor.close();f.store.close();}
 });
