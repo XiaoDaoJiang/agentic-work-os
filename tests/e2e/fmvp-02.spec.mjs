@@ -60,6 +60,7 @@ setInterval(() => {}, 1000);
     page = await context.newPage();
     await page.goto(normalURL);
     await expect(page.getByTestId('run-state')).toHaveText('Agent 已退出 · 尚未验证');
+    await page.locator('summary').filter({ hasText: /^执行日志/ }).click();
     await expect(page.getByRole('log')).toContainText('turn.completed');
     await expect(page.getByTestId('snapshot')).toContainText(base);
     await expect(page.getByText('ready · 待执行', { exact: true })).toBeVisible();
