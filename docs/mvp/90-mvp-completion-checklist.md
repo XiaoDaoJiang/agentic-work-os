@@ -9,9 +9,9 @@
 | FMVP-01 至 03 | 当前执行身份的mock、真实执行与Verification回归通过 | 04实施记录内列本轮G1与浏览器证据；最终UI变更后再执行相关回归 |
 | FMVP-04 | DONE，限定当前Windows profile | [最终验收](04-fmvp-04-implementation.md)：G1/G2各18项、真实审核/恢复/下载UI通过 |
 | FMVP-05 | DONE，限定当前Windows profile | [实际验收](05-fmvp-05-implementation.md)；18项UI、真实执行/取消/owner-loss/待审核重启/交付损坏通过 |
-| UI 完整性 | 01至05已统一复核，随06实际使用观察摩擦 | 克制配色与列表/详情层级、任务/运行/审核/交付导航、加载/空/失败/持锁、完整键盘路径与375px长内容，含实际截图 |
-| FMVP-06 | 真实任务已提供，待能力开放后执行 | Power Tool 安装包 URL 后缀校验，见下文；客观交付与摩擦记录，不编造复用或满意度 |
-| 最终审计 | 待以上单元完成 | 逐条 WWA、能力 Gate、迁移、浏览器、启动文档、原有改动保留与本地交付 |
+| UI 完整性 | 01至06已复核；当前19项UI及真实到审核、重开已观察 | 克制配色与列表/详情层级、任务/运行/审核/交付导航、加载/空/失败/持锁、完整键盘路径与375px长内容，含实际截图 |
+| FMVP-06 | DONE，真实任务到waiting_review | [实际记录](06-fmvp-06-implementation.md)：4项冻结验证、同包重放和重开；没有人类Accept或下一独立任务 |
+| 最终审计 | DONE，36项需求与证据映射无必需缺口 | `verification-output/mvp-completion/final-36-evidence-map.md`；只读复核，不冒充36次测试 |
 
 ## 工作清单
 
@@ -21,8 +21,8 @@
 - [x] 单一 owner 先写行为测试，再实现 FMVP-04，独立审查与实际验收。
 - [x] FMVP-05 整合恢复与异常解释，完成所需 UI。
 - [x] 参考合适产品的视觉与交互层级，完成01至05页面和状态的统一复核；06继续观察实际摩擦。
-- [ ] 通过应用处理真实任务并记录 FMVP-06；发起者已提供 Power Tool 修复任务，待当前 G1/G2 验收后执行。
-- [ ] 逐条完成审计，保留失败证据，完成本地交付。
+- [x] 通过应用处理真实任务并记录 FMVP-06；Power Tool第四attempt到可审核封包，前三次超时及摩擦保留，默认mock与能力Gate继续有效。
+- [x] 逐条完成审计，保留失败证据，完成本地交付；人类审核与原仓应用留待明确决定。
 
 ## 执行规则
 
@@ -36,4 +36,4 @@
 
 明确拒绝样例为 `https://gyenno.oss-cn-beijing.aliyuncs.com/pub/apk/ruiyun/%E7%9D%BF%E4%BA%91_2.10.7apk`。即使该地址能够下载，解码后的 `睿云_2.10.7apk` 仍缺少 `.apk` 后缀；版本号中的点不能作为通过条件。正常 APK 地址的 MD5 路径需要保留，拒绝时应给出可理解的原因。
 
-初步只读定位为 `py-tool/ruiyun/version_tool/util.py` 的 `get_file_md5_from_url` 和 Android MD5 UI 调用。仓库存在无关未提交文件，实际执行须保全原工作区并采用隔离基线。此处仅记录真实需求，不代表已修改、下载样例、完成应用运行或取得人类审核决定。
+初始只读定位为 `py-tool/ruiyun/version_tool/util.py` 的 `get_file_md5_from_url` 和 Android MD5 UI 调用。原仓存在无关未提交文件，执行已采用隔离兼容基线。以上需求是执行前输入；实际四次尝试与当前可审核候选见[FMVP-06](06-fmvp-06-implementation.md)，未下载样例或取得人类审核决定。

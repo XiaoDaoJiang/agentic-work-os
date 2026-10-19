@@ -3,7 +3,7 @@
 > 日期：2026-09-07  
 > 开工依据：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 方法：仓库内 `.agents/skills/wwas/SKILL.md` 的 Why / What / Acceptance  
-> 更新：2026-10-19。FMVP-01 至 FMVP-05 已通过已记录Windows本机profile验收；下一项FMVP-06。不是原联合 Gate PASS
+> 更新：2026-10-19。FMVP-01 至 FMVP-06 已按本切片边界完成Windows本机实现与验收；真实任务waiting_review，尚无人类接受或独立复用。不是原联合 Gate PASS
 
 当前以六个可交付切片推进。切片可以在 mock 边界上独立编写测试/界面，但真实端到端能力存在明确依赖；不为了声称完全独立而隐藏依赖。
 
@@ -14,7 +14,7 @@
 | FMVP-03 | 单一 Verification 与版本明确的结果查看 | DONE（当前 Windows profile） | [实施与证据](../mvp/03-fmvp-03-implementation.md)；18 项 G1、真实链路与浏览器通过，逐次明确选择验证 |
 | FMVP-04 | 不可变交付物与 Human Review | DONE（限定已验收Windows profile） | [实际验收](../mvp/04-fmvp-04-implementation.md)；当前G1/G2同时匹配才开放Accept/Delivery |
 | FMVP-05 | 重开恢复、异常阻塞与历史解释 | DONE（限定已验收Windows profile） | [实际验收](../mvp/05-fmvp-05-implementation.md)；18项UI回归及真实执行、审核、恢复、损坏回归通过 |
-| FMVP-06 | Founder 真实任务使用与摩擦修正 | IN_PROGRESS（兼容前置） | [实施计划](../mvp/06-fmvp-06-implementation.md)；当前尚未启动Power Tool真实Run，须先取得修改后匹配G1/G2 |
+| FMVP-06 | Founder 真实任务使用与摩擦修正 | DONE（Founder选题、助理代操作到可审核候选） | [实际记录](../mvp/06-fmvp-06-implementation.md)；匹配G1/G2、冻结4项验证与封包重放通过；尚无人类接受、原仓应用或下一项独立任务 |
 
 ## FMVP-01 — 可持久化 Task + mock Run 控制面
 
@@ -114,6 +114,6 @@
 
 ## 共同完成定义
 
-每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。FMVP-01至05已取得所记录Windows profile证据；其他平台未验收，06真实Founder任务仍未完成。
+每项实现 PR 写明修改范围、Acceptance 对照、实际命令/退出结果、code SHA、未运行项、能力是否仍关闭。只把确有代码与验证的项改为 DONE。FMVP-01至06已取得所记录Windows profile及本切片要求的证据；06按可审核交付验收，不能改称人类已经接受或Task done。其他平台、外部验证与复用未验收。
 
-下一项为 FMVP-06；通过应用处理已提供的Power Tool真实任务，并记录客观结果与摩擦。无需在本文件之前再增加一轮全面PM文档。
+后续为人工审核本次真实候选，再从下一项真实工作观察摩擦。没有第二项任务就记录没有，不增加全面PM文档或假设满意度。

@@ -2,9 +2,9 @@
 
 项目原生的人机协同工作控制面：组织目标、调用本地 Coding Agent、审核交付物，并保留可恢复的工作历史。
 
-## 当前阶段：FMVP-05 已通过限定 Windows profile 验收
+## 当前阶段：Founder MVP 六个切片已完成限定 Windows 验收
 
-本地实现栈已完成 FMVP-01 至 FMVP-05，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
+本地实现栈已完成 FMVP-01 至 FMVP-06，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
 
 已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
 
@@ -26,12 +26,12 @@ npm run dev
 本机已验收 profile 可显式启用真实执行：
 
 ```powershell
-$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-04/workos-g1-Fl2n6T/g1.json).Path
-$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-04/g2-a678b37-20261019/g2.json).Path
+$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-04/workos-g1-Pj3rSt/g1.json).Path
+$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-06/g2-7ae2ba7-20261019/g2.json).Path
 npm start
 ```
 
-以上manifest是本机忽略目录内的验收产物，新克隆不会自带。页面仍默认mock，保存Task后选择Codex，并明确选择本次验证。要求干净的普通Git根仓库，不支持submodule；Agent最长三分钟，验证使用所选超时。验证路径按frozen base捕获Agent提交和未提交变更；未验证路径仍对HEAD变化报漂移。捕获限普通文件和8MiB，不支持attributes/filter等内容转换。证据仅适用于所记录执行代码、CLI、helper、PowerShell与环境，不匹配即关闭对应真实能力。验收与限制见[FMVP-04记录](docs/mvp/04-fmvp-04-implementation.md)。
+以上manifest是本机忽略目录内的验收产物，新克隆不会自带。页面仍默认mock，保存Task后选择Codex，并明确选择本次验证。要求干净的普通Git根仓库，不支持submodule；Agent最长十分钟，验证使用所选超时。验证路径按frozen base捕获Agent提交和未提交变更；未验证路径仍对HEAD变化报漂移。捕获限普通文件和8MiB，允许不改变文件字节的tracked .gitattributes；拒绝实际字节转换、遗漏属性与filter等内容转换。证据仅适用于所记录执行代码、CLI、helper、PowerShell与环境，不匹配即关闭对应真实能力。验收与限制见[FMVP-04记录](docs/mvp/04-fmvp-04-implementation.md)。
 
 ## 验证
 
@@ -55,15 +55,19 @@ npm run test:e2e
 ```powershell
 Remove-Item Env:WORKOS_G2_EVIDENCE -ErrorAction SilentlyContinue
 node tools/test-e2e.mjs tests/e2e/fmvp-02.spec.mjs tests/e2e/fmvp-03.spec.mjs
-$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-04/g2-a678b37-20261019/g2.json).Path
+$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-06/g2-7ae2ba7-20261019/g2.json).Path
 node tools/test-e2e.mjs tests/e2e/fmvp-04.spec.mjs
 ```
 
 Playwright 1.52在Node 24的ESM loader会挂起；现有入口仅为纯.mjs测试关闭该转换器，应用TypeScript构建不受影响。详细证据见各切片实施记录，当前汇总见[FMVP-04](docs/mvp/04-fmvp-04-implementation.md)。
 
-## 下一项
+## Founder 自用结果
 
-[FMVP-05](docs/mvp/05-fmvp-05-implementation.md)已完成重开后的冻结目标、资源事实、异常与下一步、键盘和窄屏回归。下一项通过应用处理发起者已提供的Power Tool真实任务；当前尚未取得Founder闭环，不用演示fixture替代。
+[FMVP-06](docs/mvp/06-fmvp-06-implementation.md)记录发起者选择、助理通过真实界面执行的Power Tool安装包URL后缀修复。最终4项冻结验证通过，同版本封包、重放及页面重开均已核对；当前waiting_review，尚无人工接受或原仓回写。前三次超时和相应产品修正保留，不计为独立复用。
+
+本次现有实例可[打开审核](http://127.0.0.1:57095/#task=task_d523c6f3-55ce-4845-b8e9-06127913ab55&run=run_8c59a84c-8743-47a4-82e3-e377d257878b)。数据在 `.workos/founder-20261019-power-tool-budget`，没有自动迁入默认 `.workos`；之后重开同一记录需将 `WORKOS_DATA_DIR` 指向该目录，并提供上面的当前G1/G2。相同数据目录只运行一个服务。
+
+本次兼容输入在Temp目录，须连同本地数据保留到审核交付结束。原仓含不支持的gitlink，输入保留全部普通文件并单独记录指针；业务候选不含该来源适配。没有第二项独立任务、外部用户或满意度证据。后续由人工审核和下一项真实工作决定，不扩展通用Workflow或多Runtime。
 
 | 入口 | 内容 |
 |---|---|
@@ -76,4 +80,4 @@ Playwright 1.52在Node 24的ESM loader会挂起；现有入口仅为纯.mjs测�
 
 研究快照分支：`research/pre-mvp-handoff`。MVP 继承技术汇总 `d543dfa...` 的实验代码，保留在 `experiments/`，不自动升级为已验证生产能力；产品证据仍在原验证分支，以交接文件中的固定链接引用。
 
-本机验收不代表其他平台通过，也不代表主线已合并、外部发布或完整真实任务闭环完成。
+本机验收不外推其他平台，不表示主线已合并、外部发布、原Product/Technical Gate通过或本次任务已被人类接受。

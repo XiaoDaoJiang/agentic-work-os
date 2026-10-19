@@ -2,8 +2,8 @@
 
 > 更新：2026-10-19
 > 授权：FOUNDER_MVP_DEVELOPMENT_ALLOWED  
-> 实现状态：FMVP-01 至 FMVP-05 DONE，限定已验收 Windows 本机 profile
-> 下一项：FMVP-06 真实任务使用；真实 Accept / Delivery 仅当前 G1/G2 同时匹配时开放
+> 实现状态：FMVP-01 至 FMVP-06 DONE，限定已验收 Windows 本机 profile
+> 后续：人工审核本次真实候选，再由下一项真实工作决定迭代；真实 Accept / Delivery 仅当前 G1/G2 同时匹配时开放
 
 ## 最少阅读
 
@@ -23,6 +23,7 @@
 | 封存交付物与 Human Review | DONE；[FMVP-04](./04-fmvp-04-implementation.md)含完整G2与真实浏览器证据 |
 | 对用户开放真实 Accept / Accepted Delivery | GATED；默认关闭，当前G1/G2同时匹配才开放；不外推其他平台 |
 | 重开恢复与历史解释 | DONE；[FMVP-05](./05-fmvp-05-implementation.md)包含18项UI回归、真实恢复及交付损坏检查 |
+| Founder 真实任务与摩擦修正 | DONE；[FMVP-06](./06-fmvp-06-implementation.md)包含真实四次尝试、最终4项验证与可审核封包，尚无人类接受或第二项任务 |
 | 外部发布 | NOT_AUTHORIZED；不是本次分支准备范围 |
 
 G1/G2 是范围修订中的能力开放条件，不是新增的“任何代码都必须先等待”的阶段。
