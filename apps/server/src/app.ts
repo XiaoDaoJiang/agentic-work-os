@@ -1,13 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store, acquireDatabaseMutex } from './store.js';
-import { ApiError } from './contracts.js';
+import { ApiError, parseReviewRequest } from './contracts.js';
 import { MockExecutor } from './mock-executor.js';
 import { codexProfile } from './codex-adapter.js';
-import { readExecutionProfile, type ExecutionProfile } from './execution-profile.js';
+import { readExecutionProfile, readReviewProfile, executionIdentity, type ExecutionProfile } from './execution-profile.js';
 import { RealExecutor } from './real-executor.js';
 import { parseVerificationSelection } from './verification.js';
 
@@ -37,8 +37,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body));
 }
 export interface ApplicationOptions {
-  databasePath: string; port?: number; intervalMs?: number; staticDir?: string; g1EvidencePath?: string;
-  diagnostic?: { fixtureRoot: string; profile: ExecutionProfile };
+  databasePath: string; port?: number; intervalMs?: number; staticDir?: string; g1EvidencePath?: string; g2EvidencePath?:string;
+  diagnostic?: { fixtureRoot: string; profile: ExecutionProfile; review?:boolean };
 }
 export async function createApplication(options: ApplicationOptions) {
   const port = options.port ?? 4317;
@@ -59,10 +59,14 @@ export async function createApplication(options: ApplicationOptions) {
     }
   } } catch (error) { store.close(); release(); throw error; }
   const profile = readExecutionProfile(options.g1EvidencePath) ?? options.diagnostic?.profile;
-  const realExecutor = profile ? new RealExecutor(store, join(dirname(resolve(options.databasePath)), 'runs'), profile, options.diagnostic?.fixtureRoot) : null;
-  const capabilities = { execution_mode: 'mock', real_execution: !!profile,
-    verification_execution: !!profile, accept: false, accepted_delivery: false, g1: options.diagnostic ? 'diagnostic_not_passed' : profile ? 'passed_current_profile' : 'closed', g2: 'closed',
-    codex_profile: profile ? { ...codexProfile, available: true, reason: options.diagnostic ? '一次性仓库诊断，尚未完成 G1 验收。' : '当前 Windows profile 已通过本机 G1；trusted-local，可显式选择本次验证；Review / Delivery 仍关闭。', model: profile.model, version: profile.codex_version } : codexProfile };
+  const reviewGate=()=>options.diagnostic?.review?createHash('sha256').update(JSON.stringify(executionIdentity())).digest('hex'):readReviewProfile(profile??null,options.g2EvidencePath);
+  const realExecutor = new RealExecutor(store, join(dirname(resolve(options.databasePath)), 'runs'), profile??null, options.diagnostic?.fixtureRoot,reviewGate);
+  const capabilities = () => {
+    const current=options.diagnostic?.profile??readExecutionProfile(options.g1EvidencePath),review=!!reviewGate();
+    return {execution_mode:'mock',real_execution:!!current,verification_execution:!!current,accept:review,accepted_delivery:review,
+      g1:options.diagnostic?'diagnostic_not_passed':current?'passed_current_profile':'closed',g2:options.diagnostic?.review?'diagnostic_not_passed':review?'passed_current_profile':'closed',
+      codex_profile:current?{...codexProfile,available:true,reason:options.diagnostic?'一次性仓库诊断，尚未开放产品能力。':review?'当前 Windows profile 已通过本机 G1 / G2；可显式验证、审核和下载封存交付物。':'当前 Windows profile 已通过本机 G1；可显式选择本次验证，Review / Delivery 仍关闭。',model:current.model,version:current.codex_version}:codexProfile};
+  };
   const token = randomBytes(32).toString('base64url');
   let closing = false; let closePromise: Promise<void> | undefined;
   const server = createServer({ requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 16384 }, (req, res) => {
@@ -106,12 +110,12 @@ export async function createApplication(options: ApplicationOptions) {
       }
     }
     const url = new URL(req.url ?? '/', origin); const path = url.pathname;
-    if (method === 'GET' && path === '/api/session') { send(res, 200, { session_token: token, ...capabilities }); return; }
-    if (method === 'GET' && path === '/api/capabilities') { send(res, 200, capabilities); return; }
+    if (method === 'GET' && path === '/api/session') { send(res, 200, { session_token: token, ...capabilities() }); return; }
+    if (method === 'GET' && path === '/api/capabilities') { send(res, 200, capabilities()); return; }
     if (method === 'GET' && path === '/api/resource-lock') { send(res, 200, store.resourceLock()); return; }
     if (method === 'GET' && path === '/api/health') { send(res, 200, { status: 'ok', execution_mode: 'mock', schema_version: store.schemaVersion() }); return; }
     if (mutating && (/^\/api\/(?:accepted-deliveries|deliveries|verification|execute)(?:\/|$)/.test(path)
-      || /^\/api\/runs\/real$/.test(path) || /^\/api\/runs\/[^/]+\/(?:accept|delivery|deliveries|verification|execute)$/.test(path))) {
+      || /^\/api\/runs\/real$/.test(path) || /^\/api\/runs\/[^/]+\/(?:accept|deliveries|verification|execute)$/.test(path))) {
       throw new ApiError(403, 'CAPABILITY_DISABLED', '真实执行、Verification、Accept 和 Accepted Delivery 均未开放');
     }
     if (path === '/api/tasks' && method === 'GET') { send(res, 200, store.listTasks()); return; }
@@ -123,7 +127,7 @@ export async function createApplication(options: ApplicationOptions) {
     if (startMatch && method === 'POST') {
       const input = await readJson(req);
       if (input && typeof input === 'object' && 'execution_mode' in input && input.execution_mode === 'real') {
-        if (!realExecutor || (!options.diagnostic && JSON.stringify(readExecutionProfile(options.g1EvidencePath)) !== JSON.stringify(profile))) throw new ApiError(403, 'CAPABILITY_DISABLED', codexProfile.reason);
+        if (!profile || (!options.diagnostic && JSON.stringify(readExecutionProfile(options.g1EvidencePath)) !== JSON.stringify(profile))) throw new ApiError(403, 'CAPABILITY_DISABLED', codexProfile.reason);
         if (Object.keys(input).some(key => !['execution_mode', 'request_id', 'verify', 'expected_task_revision'].includes(key)) || !('request_id' in input) || typeof input.request_id !== 'string') throw new ApiError(400, 'INVALID_INPUT', '真实执行输入字段不合法');
         const result = await realExecutor.start(startMatch[1]!, input.request_id, parseVerificationSelection(input as Record<string,unknown>));
         send(res, result.replay ? 200 : 201, result); return;
@@ -146,12 +150,21 @@ export async function createApplication(options: ApplicationOptions) {
       if (!/^\d+$/.test(cursor) || !Number.isSafeInteger(Number(cursor))) throw new ApiError(400, 'INVALID_CURSOR', 'after 必须为非负安全整数');
       send(res, 200, store.getLogs(logMatch[1]!, Number(cursor))); return;
     }
+    const reviewMatch=/^\/api\/runs\/([^/]+)\/review$/.exec(path);
+    if(reviewMatch&&method==='GET'){send(res,200,await realExecutor.reviewContext(reviewMatch[1]!));return;}
+    if(reviewMatch&&method==='POST'){const result=await realExecutor.review(reviewMatch[1]!,parseReviewRequest(await readJson(req)));send(res,result.replay?200:201,result);return;}
+    const deliveryMatch=/^\/api\/runs\/([^/]+)\/delivery$/.exec(path);
+    if(deliveryMatch&&method==='POST'){
+      if(!reviewGate())throw new ApiError(403,'CAPABILITY_DISABLED','当前 G2 未开放交付');
+      await readJson(req);const result=await realExecutor.delivery(deliveryMatch[1]!);
+      res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="${result.package.id}.json"`,'X-Content-SHA256':result.package.sha256});res.end(result.bytes);return;
+    }
     const cancelMatch = /^\/api\/runs\/([^/]+)\/cancel$/.exec(path);
     if (cancelMatch && method === 'POST') {
       await readJson(req);
       const run = store.getRun(cancelMatch[1]!);
       if (run.execution_mode === 'real') {
-        if (!realExecutor) { send(res, 200, run); return; }
+        if (!profile) { send(res, 200, run); return; }
         send(res, 200, realExecutor.cancel(run.id)); return;
       }
       send(res, 200, executor.cancel(run.id)); return;

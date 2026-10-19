@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, readFile, rename } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile, rename, mkdir, rmdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -15,3 +15,34 @@ async function setup(){const root=await mkdtemp(path.join(os.tmpdir(),'m0-cp-rep
 test('replayChangePackage reconstructs the same result tree after the original Workspace is deleted',async()=>{const f=await setup();await rm(f.workspace,{recursive:true,force:true});const checkout=path.join(f.root,'replay');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);const replay=await replayChangePackage({bytes:f.pkg.bytes,checkout});assert.equal(replay.resultTreeHash,f.resultTreeHash);assert.equal(replay.packageSha256,f.pkg.sha256);assert.equal(await readFile(path.join(checkout,'keep.txt'),'utf8'),'after\n');await assert.rejects(()=>readFile(path.join(checkout,'remove.txt')),/ENOENT/);assert.equal(await readFile(path.join(checkout,'new.txt'),'utf8'),'rename\n');assert.deepEqual(await readFile(path.join(checkout,'binary.bin')),Buffer.from([0,255,7]));});
 test('replayChangePackage rejects a wrong base before mutating checkout bytes',async()=>{const f=await setup();const checkout=path.join(f.root,'wrong-base');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);await git(checkout,['config','user.email','m0@example.invalid']);await git(checkout,['config','user.name','M0']);await writeFile(path.join(checkout,'keep.txt'),'different committed base\n');await git(checkout,['add','keep.txt']);await git(checkout,['commit','-m','different']);const before=await readFile(path.join(checkout,'keep.txt'),'utf8');await assert.rejects(()=>replayChangePackage({bytes:f.pkg.bytes,checkout}),/base revision mismatch/);assert.equal(await readFile(path.join(checkout,'keep.txt'),'utf8'),before);assert.equal(await git(checkout,['status','--porcelain']),'');});
 test('replayChangePackage rejects tampered payload before mutating checkout bytes',async()=>{const f=await setup();const checkout=path.join(f.root,'tampered');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);const before=await readFile(path.join(checkout,'keep.txt'),'utf8');const manifest=JSON.parse(f.pkg.bytes.toString('utf8'));manifest.entries.find((e)=>e.op==='upsert').content_base64=Buffer.from('tampered').toString('base64');await assert.rejects(()=>replayChangePackage({bytes:Buffer.from(JSON.stringify(manifest)+'\n'),checkout}),/payload size or sha256 mismatch/);assert.equal(await readFile(path.join(checkout,'keep.txt'),'utf8'),before);assert.equal(await git(checkout,['status','--porcelain']),'');});
+
+
+test('all delete targets are checked before any mutation',async()=>{
+ const f=await setup(),checkout=path.join(f.root,'bad-delete');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);
+ await mkdir(path.join(checkout,'dir'));await writeFile(path.join(checkout,'dir','child'),'child');await git(checkout,['add','.']);await git(checkout,['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-m','directory']);
+ const baseRevision=await git(checkout,['rev-parse','HEAD']);const pkg=buildChangePackage({baseRevision,objectFormat:'sha1',resultTreeHash:f.resultTreeHash,changes:[{op:'delete',path:'keep.txt'},{op:'delete',path:'dir'}],evidence,verificationInvocation});
+ await assert.rejects(replayChangePackage({bytes:pkg.bytes,checkout}),/ordinary file/);
+ assert.equal(await readFile(path.join(checkout,'keep.txt'),'utf8'),'before\n');assert.equal(await readFile(path.join(checkout,'dir','child'),'utf8'),'child');assert.equal(await git(checkout,['status','--porcelain']),'');
+});
+
+test('capture and replay support file-directory replacements without recursive deletion',async()=>{
+ const f=await setup();const workspace=path.join(f.root,'transitions');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,workspace]);
+ await rm(path.join(workspace,'keep.txt'));await mkdir(path.join(workspace,'keep.txt'));await writeFile(path.join(workspace,'keep.txt','child'),'new child');
+ const baseRevision=await git(workspace,['rev-parse','HEAD']);const changes=await collectWorkspaceChanges({workspace,baseRevision}),tree=await computeResultTreeHash({workspace,baseRevision});
+ const pkg=buildChangePackage({baseRevision,...tree,changes,evidence,verificationInvocation});const checkout=path.join(f.root,'file-to-dir');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);
+ assert.equal((await replayChangePackage({bytes:pkg.bytes,checkout})).resultTreeHash,tree.resultTreeHash);assert.equal(await readFile(path.join(checkout,'keep.txt','child'),'utf8'),'new child');
+ await git(workspace,['add','.']);await git(workspace,['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-m','directory']);const newBase=await git(workspace,['rev-parse','HEAD']);await rm(path.join(workspace,'keep.txt','child'));await rmdir(path.join(workspace,'keep.txt'));await writeFile(path.join(workspace,'keep.txt'),'regular again');
+ const reverseChanges=await collectWorkspaceChanges({workspace,baseRevision:newBase}),reverseTree=await computeResultTreeHash({workspace,baseRevision:newBase});const reverse=buildChangePackage({baseRevision:newBase,...reverseTree,changes:reverseChanges,evidence,verificationInvocation});const reverseCheckout=path.join(f.root,'dir-to-file');await execFileAsync('git',['-c','core.autocrlf=false','clone',workspace,reverseCheckout]);assert.equal((await replayChangePackage({bytes:reverse.bytes,checkout:reverseCheckout})).resultTreeHash,reverseTree.resultTreeHash);assert.equal(await readFile(path.join(reverseCheckout,'keep.txt'),'utf8'),'regular again');
+});
+
+
+test('Agent commits are captured against frozen base and replay after Workspace deletion',async()=>{
+ const f=await setup(),baseRevision=await git(f.workspace,['rev-parse','HEAD']);
+ await git(f.workspace,['add','.']);await git(f.workspace,['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-m','agent implementation']);
+ assert.notEqual(await git(f.workspace,['rev-parse','HEAD']),baseRevision);
+ const changes=await collectWorkspaceChanges({workspace:f.workspace,baseRevision}),tree=await computeResultTreeHash({workspace:f.workspace,baseRevision});
+ assert.ok(changes.some(entry=>entry.path==='new.txt'));const pkg=buildChangePackage({baseRevision,...tree,changes,evidence,verificationInvocation});
+ const relative=path.relative(f.root,f.workspace);assert.ok(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative));await rm(f.workspace,{recursive:true});
+ const checkout=path.join(f.root,'committed-replay');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);
+ assert.equal((await replayChangePackage({bytes:pkg.bytes,checkout})).resultTreeHash,tree.resultTreeHash);assert.equal(await readFile(path.join(checkout,'new.txt'),'utf8'),'rename\n');
+});

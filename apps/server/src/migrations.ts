@@ -136,6 +136,23 @@ CREATE TRIGGER completed_decision BEFORE UPDATE ON runs WHEN NEW.state='complete
 BEGIN SELECT RAISE(ABORT,'completed requires review decision'); END;
 ${['artifacts','review_decisions','events'].map(table=>`CREATE TRIGGER immutable_${table}_update BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(ABORT,'evidence is immutable'); END; CREATE TRIGGER immutable_${table}_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT,'evidence is immutable'); END;`).join('\n')}
 ${['artifacts','stage_observations','captured_versions','verification_results','stage_output','execution_facts','run_logs'].map(table=>`CREATE TRIGGER sealed_${table}_insert BEFORE INSERT ON ${table} WHEN (SELECT state FROM runs WHERE id=NEW.run_id)!='running' BEGIN SELECT RAISE(ABORT,'sealed business evidence is immutable'); END;`).join('\n')}
+` }, {version:6,name:'sealed_event_boundaries',sql:`
+CREATE TABLE tasks_next (
+ id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), execution_mode TEXT NOT NULL CHECK(execution_mode='mock'),
+ state TEXT NOT NULL CHECK(state IN ('ready','review','done','blocked')), input_json TEXT NOT NULL CHECK(json_valid(input_json)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+) STRICT;
+INSERT INTO tasks_next SELECT * FROM tasks;
+DROP TABLE tasks;
+ALTER TABLE tasks_next RENAME TO tasks;
+CREATE TRIGGER sealed_event_insert BEFORE INSERT ON events
+WHEN (SELECT state FROM runs WHERE id=NEW.run_id)!='running'
+AND NOT (NEW.type IN ('resource.reconciliation.started','resource.reconciliation.succeeded','resource.reconciliation.blocked')
+ OR (NEW.type='review.ready' AND (SELECT state FROM runs WHERE id=NEW.run_id)='waiting_review')
+ OR (NEW.type='review.decided' AND (SELECT state FROM runs WHERE id=NEW.run_id)='waiting_review' AND EXISTS(SELECT 1 FROM review_decisions WHERE run_id=NEW.run_id))
+ OR (NEW.type='run.terminal' AND (SELECT state FROM runs WHERE id=NEW.run_id)='completed' AND EXISTS(SELECT 1 FROM review_decisions WHERE run_id=NEW.run_id)))
+BEGIN SELECT RAISE(ABORT,'sealed business events are immutable'); END;
+CREATE UNIQUE INDEX one_review_ready ON events(run_id) WHERE type='review.ready';
+CREATE UNIQUE INDEX one_review_decided ON events(run_id) WHERE type='review.decided';
 ` }];
 
 export function migrate(db: DatabaseSync): void {

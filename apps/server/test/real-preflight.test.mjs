@@ -29,7 +29,7 @@ test('forward migration preserves v1 mock snapshots, logs and immutable guards',
     old.close();
     const store = new Store(file);
     try {
-        assert.equal(store.schemaVersion(), 5);
+        assert.equal(store.schemaVersion(), 6);
         assert.deepEqual({...store.db.prepare('SELECT * FROM runs').get()},originalRun);
         assert.deepEqual({...store.db.prepare('SELECT * FROM tasks').get()},originalTask);
         assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
@@ -227,7 +227,7 @@ test('v2 held Run owner migrates intact to the preparation-aware v3 lock', t => 
     store.close();
     const reopened = new Store(join(directory,'state.sqlite'));
     try {
-        assert.equal(reopened.schemaVersion(),5);
+        assert.equal(reopened.schemaVersion(),6);
         assert.equal(reopened.resourceLock().run_id,run.id);
         assert.equal(reopened.resourceLock().request_id,null);
         assert.throws(()=>reopened.reservePreparation(task.id,'blocked-by-v2-lock'),/资源/);

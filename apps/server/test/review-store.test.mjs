@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync} from 'node:fs';
+import {mkdtempSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {Store} from '../dist/store.js';
 
 const input={goal:'Review fixture',definition_of_done:['Evidence remains immutable'],repository_path:process.cwd(),verification_draft:{command:'fixture',timeout_seconds:5}};
@@ -44,7 +45,7 @@ test('accept done resets only on edit or new attempt, rejected unknown resources
  assert.equal(store.getReviewDecision(run.id).decision,'accept');
  const another=pendingNew(store);store.reserveResourceCheck(another.run.id,'check-request');store.recordResourceFacts(another.run.id,{resource_state:'unknown'});
  store.decideReview(another.run.id,{...another.request,decision:'reject'});
- assert.equal(store.getTask(another.task.id).state,'ready');assert.equal(store.resourceLock().run_id,another.run.id);
+ assert.equal(store.getTask(another.task.id).state,'blocked');assert.equal(store.resourceLock().run_id,another.run.id);
  assert.throws(()=>store.reservePreparation(another.task.id,'next-held'),/资源/);
 });
 function pendingNew(store){
@@ -53,3 +54,51 @@ function pendingNew(store){
  const pkg={id:'second-change_package',run_id:run.id,sha256:'b'.repeat(64)};store.enterReview(run.id,pkg,{outcome:'passed',exit_code:0,version_match:'match',reason:'fixture'},{resource_state:'safe'});
  return {task,run,request:{request_id:'second-decision',decision:'reject',package_id:pkg.id,package_sha256:pkg.sha256,note:''}};
 }
+
+
+test('v4 nonempty immutable evidence and foreign key targets survive exact migration',t=>{
+ const directory=mkdtempSync(join(tmpdir(),'workos-v4-')),file=join(directory,'state.sqlite'),old=new DatabaseSync(file);
+ old.exec(readFileSync(new URL('./fixtures/schema-v4.sql',import.meta.url),'utf8'));
+ old.prepare("INSERT INTO tasks VALUES ('task',1,'mock','ready',?,'before','before')").run(JSON.stringify(input));
+ old.prepare("INSERT INTO runs VALUES ('run','task','old-request','success','real','succeeded','test',?,'before','after','verified')").run(JSON.stringify({execution_mode:'real',task:input}));
+ old.exec(`INSERT INTO run_logs VALUES ('run',1,'real','before','[real] saved'); INSERT INTO stage_output VALUES ('run',1,'verification','stdout','真实输出'); INSERT INTO captured_versions VALUES ('run','after','{"resultTreeHash":"fixture"}'); INSERT INTO stage_observations VALUES ('run','agent','{"resource_state":"safe"}'); INSERT INTO verification_results VALUES ('run','{"outcome":"passed"}'); INSERT INTO execution_facts VALUES ('run','{"resource_state":"safe"}');`);
+ const tables=['tasks','runs','run_logs','stage_output','captured_versions','stage_observations','verification_results','execution_facts'];
+ const before=Object.fromEntries(tables.map(table=>[table,old.prepare(`SELECT * FROM ${table}`).all().map(row=>({...row}))]));old.close();
+ const store=new Store(file);t.after(()=>store.close());
+ for(const table of tables)assert.deepEqual(store.db.prepare(`SELECT * FROM ${table}`).all().map(row=>({...row})),before[table]);
+ assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+ for(const table of tables.filter(x=>!['tasks','runs'].includes(x))) {
+  assert.equal(store.db.prepare(`PRAGMA foreign_key_list(${table})`).get().table,'runs');
+  assert.throws(()=>store.db.exec(`DELETE FROM ${table}`),/immutable|append-only/);
+ }
+ assert.throws(()=>store.db.exec("UPDATE runs SET state='running'"),/immutable/);
+ assert.throws(()=>store.db.exec("INSERT INTO events(run_id,sequence,type,payload_json) VALUES ('run',1,'agent.output','{}')"),/immutable/);
+});
+
+test('stale resource check cannot release another operation lock',t=>{
+ const {store}=setup(t);const {run}=pending(store);store.reserveResourceCheck(run.id,'new-operation');
+ assert.throws(()=>store.recordResourceCheck(run.id,{operation_id:'old-operation',resource_state:'safe'}),/所有者/);
+ assert.equal(store.resourceLock().facts.operation_id,'new-operation');
+});
+
+test('old v5 upgrades blocked projection without rewriting accepted or waiting history',t=>{
+ const directory=mkdtempSync(join(tmpdir(),'workos-v5-')),file=join(directory,'state.sqlite'),db=new DatabaseSync(file);
+ db.exec(readFileSync(new URL('./fixtures/schema-v5.sql',import.meta.url),'utf8'));
+ const legacy=Object.create(Store.prototype);legacy.db=db;
+ const accepted=pending(legacy);legacy.decideReview(accepted.run.id,accepted.request);
+ const waiting=pendingNew(legacy);legacy.reserveResourceCheck(waiting.run.id,'held-operation');
+ assert.throws(()=>db.prepare("UPDATE tasks SET state='blocked' WHERE id=?").run(waiting.task.id),/CHECK/);
+ const tables=['tasks','runs','artifacts','review_decisions','events','run_logs','execution_facts','verification_results','resource_lock'];
+ const before=Object.fromEntries(tables.map(table=>[table,db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row=>({...row}))]));legacy.close();
+ const store=new Store(file);t.after(()=>store.close());
+ for(const table of tables)assert.deepEqual(store.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row=>({...row})),before[table],table);
+ assert.equal(store.db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+ for(const table of tables)for(const key of store.db.prepare(`PRAGMA foreign_key_list(${table})`).all())assert.ok(['tasks','runs','artifacts'].includes(key.table),`${table} references ${key.table}`);
+ for(const table of ['artifacts','review_decisions','events','run_logs','execution_facts','verification_results'])assert.throws(()=>store.db.exec(`DELETE FROM ${table}`),/immutable|append-only/);
+ assert.throws(()=>store.db.prepare("UPDATE runs SET state='running' WHERE id=?").run(accepted.run.id),/immutable/);
+ assert.throws(()=>store.db.prepare("INSERT INTO events(run_id,sequence,type,payload_json) VALUES (?,999,'agent.output','{}')").run(accepted.run.id),/immutable/);
+ store.decideReview(waiting.run.id,waiting.request);
+ assert.equal(store.getTask(waiting.task.id).state,'blocked');assert.equal(store.resourceLock().run_id,waiting.run.id);
+ assert.equal(store.getTask(accepted.task.id).state,'done');assert.deepEqual({...store.getReviewDecision(accepted.run.id)},before.review_decisions[0]);
+ assert.throws(()=>store.reservePreparation(waiting.task.id,'still-blocked'),/资源/);
+});

@@ -598,3 +598,14 @@ footer {
     font-size:23px;
   }
 }
+
+.waiting_review {background:#f5eddb;color:#78571d;}
+.completed {background:#e3f0e9;color:#246347;}
+.review-panel {border-top:1px solid #e3ebe5;margin-top:18px;padding-top:18px;}
+.review-panel h3 {margin-top:18px;}
+.frozen-goal {font-size:16px;font-weight:600;line-height:1.6;overflow-wrap:anywhere;}
+.dod-list {padding-left:20px;color:#496456;}
+.review-diff {max-height:360px;white-space:pre;overflow-wrap:normal;overflow:auto;border:1px solid #dfe6e2;}
+.review-actions {display:flex;gap:10px;flex-wrap:wrap;margin-top:22px;}
+.review-decision {border-top:1px solid #dfe6e2;margin-top:22px;padding-top:18px;}
+.review-panel details {margin-top:8px;}

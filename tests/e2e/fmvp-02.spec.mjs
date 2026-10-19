@@ -62,7 +62,7 @@ setInterval(() => {}, 1000);
     await expect(page.getByTestId('run-state')).toHaveText('Agent 已退出 · 尚未验证');
     await expect(page.getByRole('log')).toContainText('turn.completed');
     await expect(page.getByTestId('snapshot')).toContainText(base);
-    await expect(page.getByText('ready · 无真实交付', { exact: true })).toBeVisible();
+    await expect(page.getByText('ready · 待执行', { exact: true })).toBeVisible();
     await page.screenshot({ path: info.outputPath('codex-unverified.png'), fullPage: true });
     const port = Number(new URL(service.origin).port);
     const saved = await (await context.request.get(`${service.origin}/api/runs/${normal.id}/logs`)).json();

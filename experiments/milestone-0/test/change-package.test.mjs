@@ -13,3 +13,13 @@ test('buildChangePackage produces deterministic sorted bytes with sealed evidenc
 test('validateChangePackageBytes rejects duplicate paths before replay',()=>{const built=build();const manifest=JSON.parse(built.bytes.toString('utf8'));manifest.entries.push({...manifest.entries[0]});assert.throws(()=>validateChangePackageBytes(Buffer.from(JSON.stringify(manifest)+'\n')),/duplicate package path/);});
 test('validateChangePackageBytes rejects malformed JSON and payload tampering',()=>{assert.throws(()=>validateChangePackageBytes(Buffer.from('{oops')),/valid UTF-8 JSON/);const built=build();const manifest=JSON.parse(built.bytes.toString('utf8'));const upsert=manifest.entries.find((e)=>e.op==='upsert');upsert.content_base64=Buffer.from('tampered').toString('base64');assert.throws(()=>validateChangePackageBytes(Buffer.from(JSON.stringify(manifest)+'\n')),/payload size or sha256 mismatch/);});
 test('validateChangePackageBytes requires the three sealed evidence references and a valid verification contract',()=>{const built=build();const missing=JSON.parse(built.bytes.toString('utf8'));delete missing.evidence.diff;assert.throws(()=>validateChangePackageBytes(Buffer.from(JSON.stringify(missing)+'\n')),/evidence.diff/);const invalid=JSON.parse(built.bytes.toString('utf8'));invalid.verification_invocation.verification_invocation_v0.cwd_binding='caller';assert.throws(()=>validateChangePackageBytes(Buffer.from(JSON.stringify(invalid)+'\n')),/cwd_binding/);});
+
+
+test('package rejects platform aliases and ancestor upserts before any replay',()=>{
+ for(const file of ['.git/config','x/.GIT/config','../bad','a/./b','a//b','a/NUL.txt','a/file.','a/file ','C:evil','a/CON','a/COM1.txt','x\u0001']) {
+  assert.throws(()=>build({changes:[{op:'delete',path:file}]}),/path|alias/);
+ }
+ assert.throws(()=>build({changes:[{op:'delete',path:'Case'},{op:'delete',path:'case'}]}),/alias/);
+ assert.throws(()=>build({changes:[{op:'delete',path:'Dir/a'},{op:'delete',path:'dir/b'}]}),/alias/);
+ const changes=sampleChanges();changes[0].path='exec.sh/child';assert.throws(()=>build({changes}),/ancestor/);
+});

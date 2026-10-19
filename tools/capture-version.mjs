@@ -8,7 +8,8 @@ try {
  if(git(['rev-parse','HEAD'])!==baseRevision||git(['status','--porcelain','--untracked-files=all'])) throw new Error('source baseline drift');
  const capture=await captureWorkspaceVersion({workspace,baseRevision});
  const result={...capture,entries:capture.entries.map(({bytes,...entry})=>entry)};
- const serialized=JSON.stringify(result);if(Buffer.byteLength(serialized)>8*1024*1024) throw new Error('capture output size limit exceeded');
+ const envelope={version:result,payload:capture.entries.map(({bytes,...entry})=>({...entry,...(bytes?{content_base64:bytes.toString('base64')}: {})}))};
+ const serialized=JSON.stringify(envelope);if(Buffer.byteLength(serialized)>24*1024*1024) throw new Error('capture output size limit exceeded');
  if(git(['rev-parse','HEAD'])!==baseRevision||git(['status','--porcelain','--untracked-files=all'])) throw new Error('source baseline drift');
  writeFileSync(output,serialized,{flag:'wx'});
  console.log('capture complete');

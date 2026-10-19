@@ -19,7 +19,7 @@ const executable = process.argv[2];
 assert.ok(executable && path.isAbsolute(executable), 'supply explicit Codex exe');
 const helper = path.join(root, 'experiments/milestone-0/native-runner/target/debug/diagnostic-runner.exe');
 const directory = mkdtempSync(path.join(os.tmpdir(), 'workos-g1-'));
-const evidence = path.join(root, 'verification-output/fmvp-03', path.basename(directory));
+const evidence = path.join(root, 'verification-output/fmvp-04', path.basename(directory));
 mkdirSync(evidence, { recursive: true });
 const git = (cwd, args) => { const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
 const version = spawnSync(executable, ['--version'], { encoding: 'utf8', windowsHide: true });

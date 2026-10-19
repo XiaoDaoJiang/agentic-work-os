@@ -21,7 +21,8 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
   const env={...safeEnv(),GIT_INDEX_FILE:path.join(directory,'index')};
   const git=async (args,actualIndex=false) => (await exec(gitExecutable,['-c','core.hooksPath='+nullPath,'-c','core.fsmonitor=false','-c','core.autocrlf=false','-c','core.attributesFile='+nullPath,...args],{cwd:path.resolve(workspace),env:actualIndex?safeEnv():env,encoding:'buffer',windowsHide:true,timeout:30000,maxBuffer:limit})).stdout;
   const text=async args=>decode(await git(args)).trim();
-  const head=async()=>{if(await text(['rev-parse','HEAD'])!==baseRevision) throw new Error('workspace HEAD drift');};
+  const headRevision=await text(['rev-parse','HEAD']);
+  const head=async()=>{if(await text(['rev-parse','HEAD'])!==headRevision) throw new Error('workspace HEAD changed during capture');};
   const indexModes=async()=>{
     const modes=Object.create(null);
     for(const record of decode(await git(['ls-files','--stage','-z'],true)).split('\0').filter(Boolean)) {
@@ -42,14 +43,16 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
       const parts=file.split('/');
       for(let i=1;i<parts.length;i++) {
         const parent=path.join(workspace,...parts.slice(0,i));
-        const stat=await lstat(parent).catch(error=>{if(error.code==='ENOENT') return null; throw error;});
+        const stat=await lstat(parent).catch(error=>{if(error.code==='ENOENT'||error.code==='ENOTDIR') return null; throw error;});
         if(!stat) break;
-        if(stat.isSymbolicLink()||!stat.isDirectory()) throw new Error('reparse or non-directory unsupported');
+        if(stat.isSymbolicLink()) throw new Error('reparse unsupported');
+        if(!stat.isDirectory()) break;
         if(await lstat(path.join(parent,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
         if(await lstat(path.join(parent,'.git')).catch(()=>null)) throw new Error('nested repository unsupported');
       }
-      const stat=await lstat(path.join(workspace,...parts)).catch(error=>{if(error.code==='ENOENT') return null; throw error;});
+      const stat=await lstat(path.join(workspace,...parts)).catch(error=>{if(error.code==='ENOENT'||error.code==='ENOTDIR') return null; throw error;});
       if(!stat) continue;
+      if(stat.isDirectory()) continue;
       if(!stat.isFile()||stat.isSymbolicLink()) throw new Error('only ordinary files supported');
       if(stat.size>limit || records.length>10000) throw new Error('capture size limit exceeded');
       const bytes=await readFile(path.join(workspace,...parts)); size+=bytes.length; if(size>limit) throw new Error('capture size limit exceeded'); result[file]={sha256:sha(bytes),size:bytes.length};
@@ -90,7 +93,7 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
     const diff=decode(await git(['diff','--binary','--no-ext-diff','--no-textconv','--no-renames',baseRevision,resultTreeHash,'--']));
     if(JSON.stringify(actualModes)!==JSON.stringify(await indexModes())||JSON.stringify(before)!==JSON.stringify(await inspect())) throw new Error('workspace changed during capture');
     const manifest=entries.map(({bytes,...entry})=>entry);
-    return {baseRevision,objectFormat,resultTreeHash,manifestSha256:sha(JSON.stringify(manifest)),entries,diff,ignoredPolicy:'Git ignored untracked files excluded; tracked files always included'};
+    return {baseRevision,headRevision,objectFormat,resultTreeHash,manifestSha256:sha(JSON.stringify(manifest)),entries,diff,ignoredPolicy:'Git ignored untracked files excluded; tracked files always included'};
   } finally { await rm(directory,{recursive:true,force:true}); }
 }
 export async function computeResultTreeHash(options) {const {objectFormat,resultTreeHash}=await captureWorkspaceVersion(options);return {objectFormat,resultTreeHash};}

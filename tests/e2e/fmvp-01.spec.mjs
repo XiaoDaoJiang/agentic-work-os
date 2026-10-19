@@ -44,7 +44,7 @@ test('create Task → mock logs → close page → restart service → persisted
     await expect(page.getByRole('log').locator('p')).toHaveText(savedLogs);
     expect(await (await context.request.get(`${service.origin}/api/runs/${runId}/logs`)).json()).toEqual(savedRecords);
     await expect(page.getByTestId('run-state')).toHaveText('模拟成功');
-    await expect(page.getByText('ready · 无真实交付', { exact: true })).toBeVisible();
+    await expect(page.getByText('ready · 待执行', { exact: true })).toBeVisible();
     // Existing Run snapshot must not follow a Task edit from the actual UI.
     await page.getByLabel('目标', { exact: true }).fill('Edited after snapshot');
     await page.getByRole('button', { name: '保存 Task 修改' }).click();

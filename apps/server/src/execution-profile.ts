@@ -12,6 +12,19 @@ export function executionIdentity() {
     const files = [...executionSources, ...executionSources.filter(name => name.startsWith('apps/server/src/') && name.endsWith('.ts')).map(name => name.replace('/src/', '/dist/').replace(/\.ts$/, '.js'))];
     return Object.fromEntries(files.map(name => [name, sha256File(join(sourceRoot, name))]));
 }
+export const g2Cases=['gate-off','same-capture-package','verification-nonzero','verification-timeout','version-drift','workspace-deleted-replay','sealed-corruption','decision-idempotency','decision-atomicity','waiting-restart','check-owner-loss','sealed-evidence-immutable','request-protection','cancel-seal','artifact-crash-recovery'];
+executionSources.push(...['artifact-db','artifact-store','artifact-reconciliation','change-package','change-package-seal','change-package-replay','delivery-integrity'].map(name=>`experiments/milestone-0/src/${name}.mjs`),'tools/check-package.mjs','tools/verify-g2.mjs');
+export function readReviewProfile(profile:ExecutionProfile|null,g2EvidencePath?:string):string|null {
+  if(!profile||!g2EvidencePath||JSON.stringify(readExecutionProfile(profile.evidence_path))!==JSON.stringify(profile))return null;
+  try {
+    const value=JSON.parse(readFileSync(g2EvidencePath,'utf8'));
+    return value.schema==='fmvp-g2-v1'&&value.activation==='passed'&&value.source_identity===profile.source_identity
+      &&value.executable_sha256===sha256File(profile.executable)&&value.helper_sha256===sha256File(profile.helper)
+      &&value.node===process.version&&value.os_release===release()&&value.platform==='win32/x64'
+      &&value.verification_shell_sha256===sha256File(verificationShell())&&value.model===profile.model
+      &&g2Cases.every(name=>value.cases?.[name]==='passed')?profile.source_identity:null;
+  }catch{return null;}
+}
 export interface ExecutionProfile {
     executable: string;
     helper: string;

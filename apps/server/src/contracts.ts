@@ -6,7 +6,7 @@ export interface TaskInput {
   verification_draft: { command: string; timeout_seconds: number };
 }
 export interface Task extends TaskInput {
-  id: string; revision: number; state: 'ready' | 'review' | 'done'; execution_mode: 'mock';
+  id: string; revision: number; state: 'ready' | 'review' | 'done' | 'blocked'; execution_mode: 'mock';
   created_at: string; updated_at: string;
 }
 export type Scenario = 'success' | 'failure' | 'cancel';
@@ -17,6 +17,11 @@ export interface ReviewRequest {request_id:string; decision:'accept'|'reject'; p
 export interface Artifact {id:string; run_id:string; type:string; content_location:string; sha256:string; size:number; sealed_at:string}
 export interface ReviewDecision {run_id:string; request_id:string; decision:'accept'|'reject'; change_package_artifact_id:string; change_package_sha256:string; note:string; decided_at:string}
 export interface ResourceCheck {operation_id:string; package_sha256:string; checked_at:string; resource_state:'safe'|'unknown'; drift:'clear'|'detected'|'unavailable'; replay:{base_revision:string;result_tree_hash:string}|null; reason:string}
+export interface ReviewContext {
+  package:Artifact|null; decision:ReviewDecision|null; artifacts:Array<{artifact:Artifact;status:'healthy'|'missing'|'corrupt'}>;
+  blockers:string[]; diff:string|null; last_check:ResourceCheck|null;
+  delivery_integrity:{value:'healthy'|'missing'|'corrupt';reasonCodes:string[];checkedAt:string}|null;
+}
 export interface StartInput { execution_mode: 'mock'; scenario: Scenario; request_id: string }
 export interface VerificationSelection { verify: boolean; expected_task_revision?: number }
 export interface FrozenVerification {
@@ -29,7 +34,7 @@ export interface FrozenVerification {
 }
 export type ExecutionStage = 'agent' | 'capture-before' | 'verification' | 'capture-after';
 export interface CapturedVersion {
-  baseRevision: string; objectFormat: string; resultTreeHash: string; manifestSha256: string;
+  baseRevision: string; headRevision:string; objectFormat: string; resultTreeHash: string; manifestSha256: string;
   entries: Array<{op: 'delete' | 'upsert'; path: string; mode?: string; size?: number; sha256?: string}>;
   diff: string; ignoredPolicy: string;
 }

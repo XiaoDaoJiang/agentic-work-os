@@ -45,7 +45,7 @@ export class Store {
     const input = parseTaskInput(value);
     return this.transaction(() => {
       this.getTask(id);
-      this.db.prepare("UPDATE tasks SET revision=revision+1,state='ready',input_json=?,updated_at=? WHERE id=?").run(JSON.stringify(input), now(), id);
+      this.db.prepare("UPDATE tasks SET revision=revision+1,state=CASE WHEN state='blocked' THEN 'blocked' ELSE 'ready' END,input_json=?,updated_at=? WHERE id=?").run(JSON.stringify(input), now(), id);
       return this.getTask(id);
     });
   }
@@ -120,7 +120,9 @@ export class Store {
     if (lock) throw new ApiError(409, 'RESOURCE_HELD', '资源事实尚未确认安全；禁止启动新 Run，请保留记录并检查本地进程', undefined, lock.run_id ?? undefined);
   }
   recordResourceFacts(id: string, facts: Record<string, unknown>) {
-    this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);
+    const current=this.resourceLock();
+    const previous=current?.run_id===id?current.facts as Record<string,unknown>:{};
+    this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify({...previous,...facts}), id);
   }
   reservePreparation(taskId: string, requestId: string): Task {
     return this.transaction(() => {
@@ -198,21 +200,26 @@ export class Store {
       return this.getRun(id);
     });
   }
-  reserveResourceCheck(id:string,operationId:string) {
+  reserveResourceCheck(id:string,operationId:string,packageSha='',reuse=false) {
     return this.transaction(()=>{
-      this.assertResourcesAvailable();this.getRun(id);
-      this.db.prepare('INSERT INTO resource_lock VALUES (1,?,NULL,NULL,?)').run(id,JSON.stringify({operation_id:operationId,resource_state:'unknown',resource_lock:'held'}));
+      this.getRun(id);
+      const facts={operation_id:operationId,package_sha256:packageSha,resource_state:'unknown',resource_lock:'held',checked_at:now()};
+      if(reuse){if(this.resourceLock()?.run_id!==id)throw new ApiError(409,'CHECK_OWNER_CHANGED','资源所有者已变化');this.recordResourceFacts(id,facts);}
+      else {this.assertResourcesAvailable();this.db.prepare('INSERT INTO resource_lock VALUES (1,?,NULL,NULL,?)').run(id,JSON.stringify(facts));}
+      this.event(id,'resource.reconciliation.started',facts);
     });
   }
   recordResourceCheck(id:string,check:ResourceCheck) {
     return this.transaction(()=>{
-      this.event(id,'resource.checked',check);
+      const lock=this.resourceLock();
+      if(lock?.run_id!==id||(lock.facts as Record<string,unknown>).operation_id!==check.operation_id)throw new ApiError(409,'CHECK_OWNER_CHANGED','资源检查所有者已变化');
+      this.event(id,check.resource_state==='safe'&&check.drift==='clear'&&check.replay?'resource.reconciliation.succeeded':'resource.reconciliation.blocked',check);
       if(check.resource_state==='safe')this.db.prepare('DELETE FROM resource_lock WHERE run_id=?').run(id);
       else this.recordResourceFacts(id,{...check,resource_lock:'held'});
     });
   }
   lastResourceCheck(id:string):ResourceCheck|null {
-    const row=this.db.prepare("SELECT payload_json FROM events WHERE run_id=? AND type='resource.checked' ORDER BY sequence DESC LIMIT 1").get(id);
+    const row=this.db.prepare("SELECT payload_json FROM events WHERE run_id=? AND type IN ('resource.reconciliation.succeeded','resource.reconciliation.blocked') ORDER BY sequence DESC LIMIT 1").get(id);
     return row?JSON.parse(String(row.payload_json)):null;
   }
   decideReview(id:string,request:ReviewRequest):{run:Run;decision:ReviewDecision;replay:boolean} {
@@ -225,7 +232,8 @@ export class Store {
       this.db.prepare('INSERT INTO review_decisions VALUES (?,?,?,?,?,?,?)').run(id,request.decision,request.package_id,request.package_sha256,request.request_id,request.note,now());
       this.event(id,'review.decided',request);
       this.db.prepare("UPDATE runs SET state='completed',phase='complete',finished_at=?,terminal_reason=? WHERE id=?").run(now(),`review_${request.decision}`,id);
-      this.db.prepare("UPDATE tasks SET state=CASE WHEN revision=? AND ?='accept' THEN 'done' ELSE 'ready' END WHERE id=?").run(run.input_snapshot.task.revision,request.decision,run.task_id);
+      const rejectedUnknown=request.decision==='reject'&&this.resourceLock()?.run_id===id;
+      this.db.prepare("UPDATE tasks SET state=CASE WHEN ? THEN 'blocked' WHEN revision=? AND ?='accept' THEN 'done' ELSE 'ready' END WHERE id=?").run(rejectedUnknown?1:0,run.input_snapshot.task.revision,request.decision,run.task_id);
       this.event(id,'run.terminal',{state:'completed',decision:request.decision});
       return {run:this.getRun(id),decision:this.getReviewDecision(id)!,replay:false};
     });
@@ -260,7 +268,7 @@ export class Store {
       this.db.prepare('INSERT INTO execution_facts VALUES (?,?)').run(id, JSON.stringify(facts));
       if (verification) this.db.prepare('INSERT INTO verification_results VALUES (?,?)').run(id,JSON.stringify(verification));
       if (safe) this.db.prepare('DELETE FROM resource_lock WHERE run_id=?').run(id);
-      else this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);
+      else {this.db.prepare('INSERT OR IGNORE INTO resource_lock VALUES (1,?,NULL,NULL,?)').run(id,JSON.stringify(facts));this.db.prepare('UPDATE resource_lock SET facts_json=? WHERE run_id=?').run(JSON.stringify(facts), id);}
       this.log(id, `${reason}；资源${safe ? '已确认停止且输出已收尾' : '未知，保持全局锁'}。Review / Delivery 仍关闭；Task 保持 ready。`);
       this.db.prepare("UPDATE runs SET state=?,phase=?,finished_at=?,terminal_reason=? WHERE id=?").run(state, run.phase, now(), reason, id);
       return this.getRun(id);

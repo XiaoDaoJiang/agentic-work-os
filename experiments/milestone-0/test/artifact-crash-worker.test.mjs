@@ -56,7 +56,7 @@ async function runCrash({store,dbPath,point}) {
   return exit;
 }
 
-for (const point of ['after_flush_close','after_hash']) {
+for (const point of ['after_staging_write','after_flush_close','after_hash']) {
   test(`strong kill at ${point} leaves no DB advance and no finalized object`, async()=>{
     const {store,dbPath}=await setup();
     const exit=await runCrash({store,dbPath,point});
@@ -67,6 +67,7 @@ for (const point of ['after_flush_close','after_hash']) {
     const run=db.prepare('select phase,state from runs where id=?').get('run-1');
     assert.equal(run.phase,'test'); assert.equal(run.state,'running');
     assert.equal((await filesRecursively(store.objectsRoot)).length,0);
+    assert.equal((await filesRecursively(store.stagingRoot)).length,1);
     db.close();
   });
 }

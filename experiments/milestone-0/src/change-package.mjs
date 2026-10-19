@@ -19,10 +19,28 @@ function assertGitPath(value) {
   if (typeof value !== 'string' || value.length === 0 || value.includes('\0') || value.includes('\\')) {
     throw new Error('package path must be a non-empty POSIX Git path');
   }
-  if (path.posix.isAbsolute(value) || value === '..' || value.startsWith('../') || value.includes('/../')) {
+  if (path.posix.isAbsolute(value) || /[\x00-\x1f<>:"|?*]/.test(value) || value.split('/').some(part => !part || ['.','..','.git'].includes(part.toLowerCase()) || /[. ]$/.test(part) || /^(?:con|conin\$|conout\$|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(part) || /^git~[1-9]/i.test(part))) {
     throw new Error(`unsafe package path: ${value}`);
   }
   return value;
+}
+function assertPathSet(entries) {
+  const seen=new Map(), prefixes=new Map();
+  for(const entry of entries) {
+    const key=entry.path.toLowerCase();
+    if(seen.has(key))throw new Error(`duplicate package path or Windows alias: ${entry.path}`);
+    seen.set(key,entry);
+    const parts=entry.path.split('/');
+    for(let i=1;i<=parts.length;i++) {
+      const prefix=parts.slice(0,i).join('/'), folded=prefix.toLowerCase();
+      if(prefixes.has(folded)&&prefixes.get(folded)!==prefix)throw new Error('Windows directory alias in package');
+      prefixes.set(folded,prefix);
+    }
+  }
+  for(const entry of entries) {
+    const parts=entry.path.toLowerCase().split('/');
+    for(let i=1;i<parts.length;i++)if(entry.op==='upsert'&&seen.get(parts.slice(0,i).join('/'))?.op==='upsert')throw new Error('package ancestor upsert conflicts with child');
+  }
 }
 
 function assertObjectId(value, objectFormat, label) {
@@ -73,6 +91,7 @@ export function buildChangePackage({ baseRevision, objectFormat, resultTreeHash,
   assertObjectId(resultTreeHash, objectFormat, 'resultTreeHash');
   validateVerificationInvocation(verificationInvocation);
   const entries = changes.map(normalizeInputEntry).sort((a, b) => compareUtf8Path(a.path, b.path));
+  assertPathSet(entries);
   for (let i = 1; i < entries.length; i += 1) {
     if (entries[i - 1].path === entries[i].path) throw new Error(`duplicate package path: ${entries[i].path}`);
   }
@@ -136,6 +155,7 @@ export function validateChangePackageBytes(bytes) {
     if (prior !== null && compareUtf8Path(prior, entry.path) > 0) throw new Error('package entries must be sorted by UTF-8 path bytes');
     prior = entry.path;
   }
+  assertPathSet(manifest.entries);
   return manifest;
 }
 
