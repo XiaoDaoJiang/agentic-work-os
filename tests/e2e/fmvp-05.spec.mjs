@@ -10,7 +10,7 @@ const runs=[run('run-first','第一次冻结目标'),run('run-second','第二次
 const emptyEvidence={stages:[],captures:[],output:[],verification:null};
 async function fixture(page){
  const service=await startTestService(mkdtempSync(join(tmpdir(),'workos-05-ui-')));
- const state={hold:null,reviewHold:null,offline:false,reviewOffline:false,writeError:'',lock:null,writes:0,reads:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
+ const state={hold:null,reviewHold:null,offline:false,reviewOffline:false,detailFailure:'',writeError:'',lock:null,writes:0,reads:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(route.request().method()!=='GET'){
@@ -24,6 +24,7 @@ async function fixture(page){
   if(path.endsWith('/review')&&state.reviewHold)await state.reviewHold;
   if(state.offline){await route.abort('failed');return;}
   if(path.endsWith('/review')&&state.reviewOffline){await route.abort('failed');return;}
+  if(state.detailFailure&&path.endsWith('/'+state.detailFailure)){await route.fulfill({status:503,json:{message:'UI 首次执行证据读取失败'}});return;}
   if(path==='/api/tasks')state.reads++;
   const facts=state.facts;
   if(path.endsWith('/run-first/facts')&&state.delayedFacts)await state.delayedFacts;
@@ -213,5 +214,29 @@ test('UI injection: unknown reads keep explicit keyboard Cancel available withou
   for(let index=0;index<30&&!await cancel.evaluate(node=>node===document.activeElement);index++)await page.keyboard.press('Tab');
   await expect(cancel).toBeFocused();await page.keyboard.press('Space');await expect.poll(()=>state.writes).toBe(1);
   state.offline=false;await expect.poll(()=>state.reads).toBeGreaterThanOrEqual(4);expect(state.writes).toBe(1);
+ }finally{await page.close();await service.stop();}
+});
+
+test('UI injection: initial facts or evidence failure reports uncertainty instead of loading',async({page})=>{
+ const {service,state}=await fixture(page);state.runs=[{...runs[0],execution_mode:'real',state:'interrupted',phase:'agent',terminal_reason:'service_restart_no_resume'}];state.facts=null;
+ state.lock={run_id:'run-first',task_id:null,facts:{resource_state:'unknown',resource_lock:'held'}};
+ try{
+  for(const failure of ['facts','evidence']){
+   state.detailFailure=failure;
+   if(failure==='facts')await page.goto(`${service.origin}/#task=${task.id}&run=run-first`);else await page.reload();
+   await expect(page.getByTestId('run-id')).toHaveText('run-first');
+   await expect(page.getByTestId('historical-resource')).toContainText('无法确认');
+   await expect(page.getByTestId('historical-resource')).not.toContainText('正在读取');
+   await expect(page.getByRole('alert').filter({hasText:'UI 首次执行证据读取失败'})).toBeVisible();
+   await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');
+   const snapshot=await page.getByTestId('snapshot').textContent();
+   state.detailFailure='';
+   await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实');
+   await expect(page.getByRole('alert').filter({hasText:'UI 首次执行证据读取失败'})).toHaveCount(0);
+   await expect(page.getByTestId('snapshot')).toHaveText(snapshot);
+   await expect(page.getByTestId('run-state')).toHaveText('停止状态未知 · 资源保持锁定');
+   await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');
+   await expect(page.getByRole('button',{name:'启动 mock Run',exact:true})).toBeDisabled();expect(state.writes).toBe(0);
+  }
  }finally{await page.close();await service.stop();}
 });
