@@ -7,6 +7,9 @@ import {createHash} from 'node:crypto';
 import {startTestService} from '../../tools/test-service.mjs';
 import {fixtureCheckBudget,fixtureLimits} from '../../tools/verify-verification.mjs';
 
+// Two 10s reads on reopen need room for rendering and observation.
+const reopenedDetailBudget=22000;
+
 // Real Agent 180s, two captures, the 60s verification draft, seal replay,
 // and the existing watchdog allowance for each of those five native boundaries.
 const initialPipelineBudget=180000+2*fixtureLimits.capture+60000+fixtureLimits.check+5*fixtureLimits.boundaryExit+fixtureLimits.persistence;
@@ -43,7 +46,7 @@ test('sealed review survives restart, accepts one package and downloads after Wo
   try{
    const failedCheck=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===`/api/runs/${runId}/delivery`,{timeout:fixtureCheckBudget});
    await page.getByRole('button',{name:'检查并下载交付物',exact:true}).click();expect((await failedCheck).status()).toBe(409);await expect(review.getByRole('alert')).toContainText('本次交付检查未通过');
-   await page.reload();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整');await expect(page.getByRole('button',{name:'检查并下载交付物',exact:true})).toBeEnabled();await expect(review).toContainText('上次检查存在漂移或无法确认');
+   await page.reload();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整',{timeout:reopenedDetailBudget});await expect(page.getByRole('button',{name:'检查并下载交付物',exact:true})).toBeEnabled();await expect(review).toContainText('上次检查存在漂移或无法确认');
   }finally{assertOwned(offline);assertOwned(source);renameSync(offline,source);}
   const downloadPromise=page.waitForEvent('download',{timeout:fixtureCheckBudget});void downloadPromise.catch(()=>{});
   const delivering=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===`/api/runs/${runId}/delivery`,{timeout:fixtureCheckBudget});

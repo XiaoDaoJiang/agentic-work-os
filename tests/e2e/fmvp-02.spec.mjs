@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { startTestService } from '../../tools/test-service.mjs';
 
+// Two 10s reads on reopen need room for rendering and observation.
+const reopenedDetailBudget = 22000;
+
 test('accepted Windows profile: real output, reopen, cancel and owner-loss remain honest in UI', async ({ browser }, info) => {
   test.skip(!process.env.WORKOS_G1_EVIDENCE || process.platform !== 'win32', 'Requires an actual, matching Windows G1 manifest');
   test.setTimeout(420000);
@@ -109,7 +112,7 @@ setInterval(() => {}, 1000);
     await expect(page.getByTestId('run-state')).toHaveText('停止状态未知 · 资源保持锁定');
     await expect(page.getByTestId('current-resource')).toContainText('已阻止新运行');
     await expect(page.getByTestId('frozen-goal')).toHaveText(interrupted.input_snapshot.task.goal);
-    await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实');
+    await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实', { timeout: reopenedDetailBudget });
     await expect(page.getByTestId('next-step')).toContainText('持锁对象');
     const held=await(await context.request.get(`${service.origin}/api/resource-lock`)).json();
     expect(held.run_id).toBe(interrupted.id);
