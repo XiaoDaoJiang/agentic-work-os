@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, rename, chmod } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, mkdir, rm, rename, chmod } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { computeResultTreeHash, collectWorkspaceChanges } from '../src/git-result-tree.mjs';
+import { captureWorkspaceVersion, computeResultTreeHash, collectWorkspaceChanges } from '../src/git-result-tree.mjs';
 
 const execFileAsync = promisify(execFile);
 async function git(cwd, args, options = {}) {
@@ -66,4 +66,71 @@ test('collectWorkspaceChanges fails closed on symlink entries', async () => {
   const { workspace, baseRevision } = await createFixture(); const target=path.join(workspace,'target.txt'); await writeFile(target,'target\n');
   try { await (await import('node:fs/promises')).symlink('target.txt',path.join(workspace,'link.txt')); } catch(error){ if(error?.code==='EPERM') return; throw error; }
   await assert.rejects(()=>collectWorkspaceChanges({workspace,baseRevision}),/unsupported Git mode 120000|only ordinary files supported/);
+});
+
+test('nested LF, binary and export-ignore attributes preserve captured bytes and the real index', async () => {
+  const { workspace } = await createFixture();
+  await mkdir(path.join(workspace, 'kibana'));
+  const attributes = '*.js text eol=lf\n*.md text eol=lf\n*.png binary\nREADME.md export-ignore\n';
+  await writeFile(path.join(workspace, 'kibana/.gitattributes'), attributes);
+  await writeFile(path.join(workspace, 'kibana/app.js'), 'before\n');
+  await writeFile(path.join(workspace, 'kibana/README.md'), 'before\n');
+  await writeFile(path.join(workspace, 'kibana/image.png'), Buffer.from([0, 255, 13, 10]));
+  await git(workspace, ['add', '.']); await git(workspace, ['commit', '-m', 'attributes']);
+  const baseRevision = await git(workspace, ['rev-parse', 'HEAD']);
+  await writeFile(path.join(workspace, 'kibana/.gitattributes'), attributes + '# captured\n');
+  await writeFile(path.join(workspace, 'kibana/app.js'), 'after\n');
+  await writeFile(path.join(workspace, 'kibana/README.md'), 'kept despite export-ignore\n');
+  await writeFile(path.join(workspace, 'kibana/image.png'), Buffer.from([0, 255, 13, 10, 7]));
+  const index = await readFile(path.join(workspace, '.git/index'));
+  const first = await captureWorkspaceVersion({ workspace, baseRevision });
+  const second = await captureWorkspaceVersion({ workspace, baseRevision });
+  assert.equal(second.resultTreeHash, first.resultTreeHash);
+  for (const [file, bytes] of [['.gitattributes', Buffer.from(attributes + '# captured\n')], ['app.js', Buffer.from('after\n')], ['README.md', Buffer.from('kept despite export-ignore\n')], ['image.png', Buffer.from([0, 255, 13, 10, 7])]]) {
+    assert.deepEqual(first.entries.find(entry => entry.path === 'kibana/' + file).bytes, bytes);
+  }
+  assert.deepEqual(await readFile(path.join(workspace, '.git/index')), index);
+});
+
+test('real CRLF conversion is rejected without changing the real index', async () => {
+  const { workspace } = await createFixture();
+  await writeFile(path.join(workspace, '.gitattributes'), '*.txt text eol=lf\n');
+  await git(workspace, ['add', '.']); await git(workspace, ['commit', '-m', 'attributes']);
+  const baseRevision = await git(workspace, ['rev-parse', 'HEAD']);
+  await writeFile(path.join(workspace, 'keep.txt'), Buffer.from('changed\r\n'));
+  const index = await readFile(path.join(workspace, '.git/index'));
+  await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /captured bytes changed or content conversion detected/);
+  assert.deepEqual(await readFile(path.join(workspace, '.git/index')), index);
+});
+
+for (const prefix of ['', 'kibana/']) {
+  test(`ignored ${prefix}.gitattributes must be captured before its rules can affect the tree`, async () => {
+    const { workspace, baseRevision } = await createFixture();
+    if (prefix) await mkdir(path.join(workspace, 'kibana'));
+    await writeFile(path.join(workspace, '.gitignore'), '.gitattributes\n');
+    await writeFile(path.join(workspace, prefix + '.gitattributes'), '*.txt text eol=lf\n');
+    await writeFile(path.join(workspace, prefix + 'new.txt'), 'LF text\n');
+    const index = await readFile(path.join(workspace, '.git/index'));
+    await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /attributes file must be captured/);
+    assert.deepEqual(await readFile(path.join(workspace, '.git/index')), index);
+    await git(workspace, ['add', '-f', prefix + '.gitattributes']);
+    const captured = await captureWorkspaceVersion({ workspace, baseRevision });
+    assert.deepEqual(captured.entries.find(entry => entry.path === prefix + '.gitattributes').bytes, Buffer.from('*.txt text eol=lf\n'));
+    assert.deepEqual(captured.entries.find(entry => entry.path === prefix + 'new.txt').bytes, Buffer.from('LF text\n'));
+  });
+}
+
+test('local filter programs, info attributes and includes remain blocked before execution', async () => {
+  const { workspace, baseRevision } = await createFixture();
+  const marker = path.join(workspace, 'filter-executed.txt');
+  await writeFile(path.join(workspace, '.gitattributes'), '*.txt filter=danger\n');
+  await git(workspace, ['config', 'filter.danger.clean', 'echo ran > filter-executed.txt']);
+  await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /local content conversion\/filter\/include unsupported/);
+  await assert.rejects(readFile(marker), /ENOENT/);
+  await git(workspace, ['config', '--remove-section', 'filter.danger']);
+  await writeFile(path.join(workspace, '.git/info/attributes'), '*.txt text\n');
+  await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /info attributes unsupported/);
+  await rm(path.join(workspace, '.git/info/attributes'));
+  await git(workspace, ['config', 'include.path', 'absent-config']);
+  await assert.rejects(captureWorkspaceVersion({ workspace, baseRevision }), /local content conversion\/filter\/include unsupported/);
 });

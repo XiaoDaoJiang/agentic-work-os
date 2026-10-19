@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { collectWorkspaceChanges, computeResultTreeHash } from '../src/git-result-tree.mjs';
+import { captureWorkspaceVersion, collectWorkspaceChanges, computeResultTreeHash } from '../src/git-result-tree.mjs';
 import { buildChangePackage } from '../src/change-package.mjs';
 import { replayChangePackage } from '../src/change-package-replay.mjs';
 const execFileAsync=promisify(execFile);async function git(cwd,args){const {stdout=''}=await execFileAsync('git',['-c','core.autocrlf=false',...args],{cwd,encoding:'utf8'});return stdout.trim();}
@@ -46,3 +46,41 @@ test('Agent commits are captured against frozen base and replay after Workspace 
  const checkout=path.join(f.root,'committed-replay');await execFileAsync('git',['-c','core.autocrlf=false','clone',f.seed,checkout]);
  assert.equal((await replayChangePackage({bytes:pkg.bytes,checkout})).resultTreeHash,tree.resultTreeHash);assert.equal(await readFile(path.join(checkout,'new.txt'),'utf8'),'rename\n');
 });
+
+for (const ignored of [false, true]) {
+ test(`sealed replay retains nested attributes and literal payload bytes, ignored=${ignored}`, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'm0-attributes-replay-'));
+  const seed = path.join(root, 'seed');
+  await execFileAsync('git', ['init', seed]);
+  await git(seed, ['config', 'user.email', 'm0@example.invalid']); await git(seed, ['config', 'user.name', 'M0']);
+  await mkdir(path.join(seed, 'kibana'));
+  const attributes = '*.js text eol=lf\n*.md text eol=lf\n*.png binary\nREADME.md export-ignore\n';
+  await writeFile(path.join(seed, 'kibana/app.js'), 'before\n');
+  await writeFile(path.join(seed, 'kibana/README.md'), 'before\n');
+  await writeFile(path.join(seed, 'kibana/image.png'), Buffer.from([0, 255, 13, 10]));
+  if (ignored) await writeFile(path.join(seed, '.gitignore'), '.gitattributes\n');
+  else await writeFile(path.join(seed, 'kibana/.gitattributes'), attributes);
+  await git(seed, ['add', '.']); await git(seed, ['commit', '-m', 'base']);
+  const baseRevision = await git(seed, ['rev-parse', 'HEAD']);
+  const workspace = path.join(root, 'workspace');
+  await execFileAsync('git', ['-c', 'core.autocrlf=false', 'clone', seed, workspace]);
+  await writeFile(path.join(workspace, 'kibana/.gitattributes'), attributes + '# payload\n');
+  await writeFile(path.join(workspace, 'kibana/app.js'), 'after\n');
+  await writeFile(path.join(workspace, 'kibana/README.md'), 'kept\n');
+  await writeFile(path.join(workspace, 'kibana/image.png'), Buffer.from([0, 255, 13, 10, 7]));
+  if (ignored) await git(workspace, ['add', '-f', 'kibana/.gitattributes']);
+  const capture = await captureWorkspaceVersion({ workspace, baseRevision });
+  const pkg = buildChangePackage({ baseRevision, objectFormat: capture.objectFormat, resultTreeHash: capture.resultTreeHash, changes: capture.entries, evidence, verificationInvocation });
+  assert.ok(capture.entries.some(entry => entry.path === 'kibana/.gitattributes'));
+  assert.equal(path.dirname(workspace), root); await rm(workspace, { recursive: true });
+  const checkout = path.join(root, 'replay');
+  await execFileAsync('git', ['-c', 'core.autocrlf=false', 'clone', seed, checkout]);
+  const index = await readFile(path.join(checkout, '.git/index'));
+  assert.equal((await replayChangePackage({ bytes: pkg.bytes, checkout })).resultTreeHash, capture.resultTreeHash);
+  assert.equal(await readFile(path.join(checkout, 'kibana/.gitattributes'), 'utf8'), attributes + '# payload\n');
+  assert.equal(await readFile(path.join(checkout, 'kibana/app.js'), 'utf8'), 'after\n');
+  assert.equal(await readFile(path.join(checkout, 'kibana/README.md'), 'utf8'), 'kept\n');
+  assert.deepEqual(await readFile(path.join(checkout, 'kibana/image.png')), Buffer.from([0, 255, 13, 10, 7]));
+  assert.deepEqual(await readFile(path.join(checkout, '.git/index')), index);
+ });
+}
