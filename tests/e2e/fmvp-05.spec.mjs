@@ -63,12 +63,14 @@ test('UI injection: review read failure closes stale actions and recovery clears
   await page.goto(`${service.origin}/#task=${task.id}&run=review-run`);
   const accept=page.getByRole('button',{name:'接受交付物',exact:true});
   await expect(accept).toBeEnabled();
+  await expect(page.getByTestId('package-integrity')).toContainText('当前封存证据完整');
   await expect(page.getByTestId('historical-resource')).toContainText('当时已确认安全');
   state.lock={run_id:'other-run',task_id:null,facts:{resource_state:'unknown'}};
   await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');await expect(accept).toBeDisabled();
   await expect(page.getByRole('button',{name:'拒绝本次结果',exact:true})).toBeEnabled();state.lock=null;
   await expect(accept).toBeEnabled();state.reviewOffline=true;
   await expect(page.getByTestId('review-read-status')).toContainText('无法确认');await expect(accept).toBeDisabled();
+  await expect(page.getByTestId('package-integrity')).toContainText('无法确认');
   await expect(page.getByTestId('review-diff')).toContainText('long');
   state.reviewOffline=false;await expect(accept).toBeEnabled();await expect(page.getByTestId('review-read-status')).toHaveCount(0);
   state.runs=[{...state.runs[0],state:'completed',phase:'complete'}];

@@ -95,6 +95,7 @@ function ReviewPanel({run,evidence,onChanged,resourcesReady,resourceLock}:{run:R
     }catch(err){setError(message(err));}finally{setBusy(false);}
   }
   const packageReadable=context?.artifacts.some(item=>item.artifact.type==='change_package'&&item.status==='healthy');
+  const sealedHealthy=!!context?.package&&context.artifacts.length>0&&context.artifacts.every(item=>item.status==='healthy');
   const gateClosed=context?.blockers.some(reason=>reason.includes('G2'));
   const resourceHeld=context?.blockers.some(reason=>reason.includes('保持全局锁'));
   const currentRead=resourcesReady&&!!context&&!readError;
@@ -110,7 +111,7 @@ function ReviewPanel({run,evidence,onChanged,resourcesReady,resourceLock}:{run:R
     {!result&&<p>{evidence?'验证结果尚未形成；不会推断通过。':'正在读取验证证据…'}</p>}
     {result&&result.outcome!=='passed'&&<p className="warning">验证未通过。请结合冻结目标与变更自行判断，接受不会把失败的验证改写为通过。</p>}
     {(['stdout','stderr'] as const).map(stream=><details key={stream}><summary>封存验证 {stream}</summary><pre>{context?.diff!==null?evidence?.output.filter(row=>row.stage==='verification'&&row.stream===stream).map(row=>row.text).join('')||'没有输出':'封存证据不可用'}</pre></details>)}
-    {context&&!context.decision&&<p className="hint">尚无人工决定。{context.package?'封存对象完整性见当前检查结果。':'尚无封存交付物。'}</p>}
+    {!context?.decision&&<><p className="hint">尚无人工决定。</p><p data-testid="package-integrity" className={currentRead&&sealedHealthy?'notice':'warning'}>{!context&&!readError?'正在读取封存完整性…':!currentRead?'当前封存完整性无法确认，等待读取恢复。':!context?.package||!context.artifacts.length?'尚无完整封存交付物。':sealedHealthy?'当前封存证据完整。':`当前封存证据异常 · ${context.artifacts.filter(item=>item.status!=='healthy').map(item=>`${item.artifact.type} ${item.status==='missing'?'缺失':'损坏'}`).join('、')}`}</p></>}
     {context?.blockers.map(reason=><p className="warning" key={reason}>{reason}</p>)}
     {context?.decision?<div className="review-decision"><strong data-testid="review-decision">{context.decision.decision==='accept'?'已接受交付物':'已拒绝本次结果'}</strong><p className="hint">{new Date(context.decision.decided_at).toLocaleString('zh-CN')} · 历史决定保持不变</p>
       <p data-testid="review-next-step" className="notice">下一步 · {!currentRead?'等待读取恢复，当前审核与资源状态无法确认。':context.decision.decision==='reject'?'保留拒绝决定，调整任务后显式发起下一次尝试。':resourceLock?'先检查当前全局持锁对象，暂停交付物下载。':context.delivery_integrity?.value!=='healthy'?'当前交付物不可下载，保留接受记录并检查本地封存对象。':'查看当前完整性，检查并下载交付物。'}</p>
