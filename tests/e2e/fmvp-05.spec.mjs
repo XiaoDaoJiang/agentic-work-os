@@ -10,15 +10,16 @@ const runs=[run('run-first','第一次冻结目标'),run('run-second','第二次
 const emptyEvidence={stages:[],captures:[],output:[],verification:null};
 async function fixture(page){
  const service=await startTestService(mkdtempSync(join(tmpdir(),'workos-05-ui-')));
- const state={hold:null,offline:false,lock:null,writes:0,facts:{resource_state:'safe'},delayedFacts:null};
+ const state={hold:null,offline:false,reviewOffline:false,lock:null,writes:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   if(route.request().method()!=='GET'){state.writes++;await route.fulfill({json:task});return;}
   if(path==='/api/session'){await route.fulfill({json:{session_token:'ui-only',real_execution:false,accept:false,codex_profile:{reason:'UI fixture，不是真实执行'}}});return;}
   if(state.hold&&['/api/tasks','/api/runs','/api/resource-lock'].includes(path))await state.hold;
   if(state.offline){await route.abort('failed');return;}
+  if(path.endsWith('/review')&&state.reviewOffline){await route.abort('failed');return;}
   if(path.endsWith('/facts')&&state.delayedFacts)await state.delayedFacts;
-  const value=path==='/api/tasks'?[task]:path==='/api/runs'?runs:path==='/api/resource-lock'?state.lock:path.endsWith('/facts')?state.facts:path.endsWith('/logs')?[]:emptyEvidence;
+  const value=path==='/api/tasks'?[task]:path==='/api/runs'?state.runs:path==='/api/resource-lock'?state.lock:path.endsWith('/review')?state.review:path.endsWith('/facts')?state.facts:path.endsWith('/logs')?[]:emptyEvidence;
   await route.fulfill({json:value});
  });
  return {service,state};
@@ -48,6 +49,39 @@ test('UI injection: loading, stale history and current lock recover without writ
   await page.screenshot({path:info.outputPath('preparing-lock.png'),fullPage:true});
   expect(state.writes).toBe(0);
  }finally{release();await page.close();await service.stop();}
+});
+
+test('UI injection: review read failure closes stale actions and recovery clears the read error',async({page},info)=>{
+ const {service,state}=await fixture(page);
+ state.runs=[{...run('review-run','审核冻结目标'),execution_mode:'real',state:'waiting_review',phase:'review'}];
+ state.review={package:{id:'package-ui',sha256:'a'.repeat(64)},decision:null,artifacts:[{artifact:{type:'change_package'},status:'healthy'}],blockers:[],diff:'diff --git a/long b/long\n+'+'long'.repeat(500),last_check:{drift:'clear'},delivery_integrity:null};
+ try{
+  await page.goto(`${service.origin}/#task=${task.id}&run=review-run`);
+  const accept=page.getByRole('button',{name:'接受交付物',exact:true});
+  await expect(accept).toBeEnabled();
+  await expect(page.getByTestId('historical-resource')).toContainText('当时已确认安全');
+  state.lock={run_id:'other-run',task_id:null,facts:{resource_state:'unknown'}};
+  await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');await expect(accept).toBeDisabled();state.lock=null;
+  await expect(accept).toBeEnabled();state.reviewOffline=true;
+  await expect(page.getByTestId('review-read-status')).toContainText('无法确认');await expect(accept).toBeDisabled();
+  await expect(page.getByTestId('review-diff')).toContainText('long');
+  state.reviewOffline=false;await expect(accept).toBeEnabled();await expect(page.getByTestId('review-read-status')).toHaveCount(0);
+  state.runs=[{...state.runs[0],state:'completed',phase:'complete'}];
+  state.review={...state.review,decision:{decision:'accept',decided_at:'2026-10-19T00:00:00Z'},delivery_integrity:{value:'healthy'},blockers:['上次检查存在漂移或无法确认'],last_check:{drift:'unavailable',replay:null}};
+  const download=page.getByRole('button',{name:'检查并下载交付物',exact:true});
+  await expect(download).toBeEnabled();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整');
+  state.offline=true;await expect(page.getByTestId('current-resource')).toContainText('无法确认');await expect(download).toBeDisabled();state.offline=false;
+  await expect(download).toBeEnabled();
+  for(const [value,text] of [['missing','当前交付物缺失'],['corrupt','当前交付物损坏']]){
+   state.review={...state.review,delivery_integrity:{value}};
+   await expect(page.getByTestId('delivery-integrity')).toContainText(text);await expect(download).toBeDisabled();await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物');
+  }
+  await page.screenshot({path:info.outputPath('accepted-corrupt.png'),fullPage:true});
+  await page.setViewportSize({width:375,height:812});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  expect(await page.getByTestId('review-diff').evaluate(node=>node.scrollWidth>node.clientWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('narrow-corrupt.png'),fullPage:true});expect(state.writes).toBe(0);
+ }finally{await page.close();await service.stop();}
 });
 
 test('UI injection: frozen input, hash selection and keyboard editing stay stable',async({page},info)=>{

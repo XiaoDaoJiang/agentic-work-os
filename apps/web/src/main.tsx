@@ -71,20 +71,22 @@ function TaskForm({ task, onSaved }: { task?: Task; onSaved: (task: Task) => voi
     {task && <p className="hint">修改仅影响下一次 Run。已有 Run 的输入快照不会改变。</p>}
   </form>;
 }
-function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null;onChanged:(run:Run)=>void}) {
+function ReviewPanel({run,evidence,onChanged,resourcesReady}:{run:Run;evidence:RunEvidence|null;onChanged:(run:Run)=>void;resourcesReady:boolean}) {
   const [context,setContext]=useState<ReviewContext|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [readError,setReadError]=useState('');
   const pending=useRef<{decision:'accept'|'reject';request_id:string}|null>(null);
-  useEffect(()=>{let stopped=false;let timer:ReturnType<typeof setTimeout>;setContext(null);setError('');pending.current=null;
-    const refresh=async()=>{try{const next=await api<ReviewContext>(`/api/runs/${run.id}/review`);if(!stopped)setContext(next);}catch(err){if(!stopped)setError(message(err));}finally{if(!stopped)timer=setTimeout(refresh,2000);}};
+  useEffect(()=>{let stopped=false;let timer:ReturnType<typeof setTimeout>;setContext(null);setReadError('');pending.current=null;
+    const refresh=async()=>{try{const next=await api<ReviewContext>(`/api/runs/${run.id}/review`);if(!stopped){setContext(next);setReadError('');}}catch(err){if(!stopped)setReadError(message(err));}finally{if(!stopped)timer=setTimeout(refresh,2000);}};
     void refresh();return()=>{stopped=true;clearTimeout(timer);};
   },[run.id,run.state]);
   async function decide(decision:'accept'|'reject') {
-    if(!context?.package)return;setBusy(true);setError('');
+    if(!context?.package||!resourcesReady||readError||busy)return;setBusy(true);setError('');
     if(pending.current?.decision!==decision)pending.current={decision,request_id:crypto.randomUUID()};
     try {const result=await api<{run:Run}>(`/api/runs/${run.id}/review`,'POST',{...pending.current,package_id:context.package.id,package_sha256:context.package.sha256,note:''});pending.current=null;onChanged(result.run);setContext(await api<ReviewContext>(`/api/runs/${run.id}/review`));}
     catch(err){setError(message(err));}finally{setBusy(false);}
   }
   async function download() {
+    if(!resourcesReady||readError||busy)return;
     setBusy(true);setError('');
     try {if(!sessionToken)await readSession();
       const response=await fetch(`/api/runs/${run.id}/delivery`,{method:'POST',headers:{'Content-Type':'application/json','X-WorkOS-Session':sessionToken},body:'{}'});
@@ -95,10 +97,13 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
   const packageReadable=context?.artifacts.some(item=>item.artifact.type==='change_package'&&item.status==='healthy');
   const gateClosed=context?.blockers.some(reason=>reason.includes('G2'));
   const resourceHeld=context?.blockers.some(reason=>reason.includes('保持全局锁'));
-  const acceptBlocked=!context||context.blockers.some(reason=>!reason.startsWith('上次检查'));
+  const currentRead=resourcesReady&&!!context&&!readError;
+  const acceptBlocked=!currentRead||!context||context.blockers.some(reason=>!reason.startsWith('上次检查'));
   const result=evidence?.verification;
   return <section className="review-panel" aria-label="交付物审核">
     <span className="eyebrow">FROZEN RESULT</span>
+    {!context&&!readError&&<p role="status">正在读取同包审核与完整性…</p>}
+    {readError&&<p data-testid="review-read-status" role="alert" className="error">当前审核与完整性无法确认，保留的记录已过期。暂停接受、拒绝与下载，等待读取恢复。{readError}</p>}
     <h3>最终变更</h3>{context?.diff!==null&&context?.diff!==undefined?<pre data-testid="review-diff" className="review-diff">{context.diff||'没有文件变更'}</pre>:<p className="warning">封存变更尚不可读取。</p>}
     <h3>验证结果</h3><pre>{run.input_snapshot.verification?.requested_command}</pre>
     {result&&<p data-testid="verification-result"><strong>{{passed:'命令通过',failed:'命令失败',error:'验证执行错误',timeout:'已确认超时',cancelled:'已取消',interrupted:'资源未知'}[result.outcome]}</strong> · 退出码 {result.exit_code??'未取得'}<br/>{result.version_match==='match'?'验证前后捕获版本一致':'最终版本未被同一验证结果证明'}</p>}
@@ -107,8 +112,8 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
     {context?.blockers.map(reason=><p className="warning" key={reason}>{reason}</p>)}
     {context?.decision?<div className="review-decision"><strong data-testid="review-decision">{context.decision.decision==='accept'?'已接受交付物':'已拒绝本次结果'}</strong><p className="hint">{new Date(context.decision.decided_at).toLocaleString('zh-CN')} · 历史决定保持不变</p>
       {context.delivery_integrity&&<p data-testid="delivery-integrity" className={context.delivery_integrity.value==='healthy'?'notice':'error'}>{{healthy:'当前封存对象完整',missing:'当前交付物缺失',corrupt:'当前交付物损坏'}[context.delivery_integrity.value]}。接受记录不会因此改写。</p>}
-      {context.decision.decision==='accept'&&<button type="button" className="primary" disabled={busy||gateClosed||resourceHeld||context.delivery_integrity?.value!=='healthy'} onClick={()=>void download()}>{busy?'检查交付物…':'检查并下载交付物'}</button>}
-    </div>:<div className="review-actions"><button type="button" className="primary" disabled={busy||acceptBlocked||run.state!=='waiting_review'} onClick={()=>void decide('accept')}>{busy?'检查与提交中…':context?.last_check?.drift==='clear'?'接受交付物':'重新检查并接受'}</button><button type="button" className="danger" disabled={busy||gateClosed||!packageReadable||run.state!=='waiting_review'} onClick={()=>void decide('reject')}>拒绝本次结果</button></div>}
+      {context.decision.decision==='accept'&&<button type="button" className="primary" disabled={busy||!currentRead||gateClosed||resourceHeld||context.delivery_integrity?.value!=='healthy'} onClick={()=>void download()}>{busy?'检查交付物…':'检查并下载交付物'}</button>}
+    </div>:<div className="review-actions"><button type="button" className="primary" disabled={busy||acceptBlocked||run.state!=='waiting_review'} onClick={()=>void decide('accept')}>{busy?'检查与提交中…':context?.last_check?.drift==='clear'?'接受交付物':'重新检查并接受'}</button><button type="button" className="danger" disabled={busy||!currentRead||gateClosed||!packageReadable||run.state!=='waiting_review'} onClick={()=>void decide('reject')}>拒绝本次结果</button></div>}
     <p className="hint">接受表示获得同一 Run 的可重放交付物，不会 merge、push 或发布。资源状态未知时继续阻止新运行。</p>
     {error&&<p role="alert" className="error">{error}</p>}
     <details><summary>封存身份与上次重放检查</summary><p className="hint">普通刷新只检查封存对象。接受和下载会重新检查当前漂移并重放。</p><pre>{JSON.stringify({package:context?.package,last_check:context?.last_check},null,2)}</pre></details>
@@ -139,7 +144,7 @@ function RunDetail({ run, onCancel, busy, onChanged, resourcesReady, resourceLoc
     {run.state === 'running' && <button type="button" className="danger" onClick={onCancel} disabled={busy}>{run.execution_mode === 'mock' ? '取消 mock Run' : run.input_snapshot.verification ? '请求取消 Run' : '请求取消 Codex'}</button>}
     {run.execution_mode === 'mock' && run.state === 'interrupted' && <p className="warning">服务重启时未完成的 mock 已标为 interrupted，不会自动续跑或补写成功。可保留历史并发起新的尝试。</p>}
     {!['running','waiting_review','completed'].includes(run.state) && <p className="terminal-reason">{run.terminal_reason}<br />{run.execution_mode === 'mock' ? '这不是代码交付或 OS 进程终止证据。' : run.input_snapshot.verification ? '验证仅为命令与捕获版本证据，不代表全部 DoD。Review / Delivery 仍关闭。' : '仅为 Agent 阶段结果；未执行 Verification，尚无 Review 或交付。资源未知时禁止新运行。'}</p>}
-    {['waiting_review','completed'].includes(run.state)&&<ReviewPanel key={run.id} run={run} evidence={evidence} onChanged={onChanged}/> }
+    {['waiting_review','completed'].includes(run.state)&&<ReviewPanel key={run.id} run={run} evidence={evidence} onChanged={onChanged} resourcesReady={resourcesReady&&!resourceLock}/> }
     {!['waiting_review','completed'].includes(run.state)&&<p className="hint">{!evidence?.captures.length?'未形成可读取变更证据。 ':''}{!run.input_snapshot.verification?'本次未执行验证。 ':''}尚无人工决定。尚无封存交付物。</p>}
     {run.input_snapshot.verification&&!['waiting_review','completed'].includes(run.state) && <section aria-label="验证证据" className="verification-evidence">
       <h3>本次验证</h3>
@@ -225,7 +230,7 @@ function App() {
       {connectionError && <p role="alert" className="error">{connectionError}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
-      <div data-testid="current-resource" className={!resourcesReady||resourceLock?'warning':'hint'}>{!resourcesReady?'当前资源状态无法确认，暂停新运行。':resourceLock?'当前全局持锁，已阻止新运行。停止状态尚未确认，资源锁保持。请保留历史并检查本地受控进程。':'当前未持锁。'}{resourceLock&&<><span>{!resourcesReady?'上次读取的持锁对象 · ':''}{resourceLock.run_id??resourceLock.task_id??'准备中的请求'}</span><button type="button" className="link" onClick={()=>{const locked=runs.find(r=>r.id===resourceLock.run_id);if(locked)navigate(locked.task_id,locked.id);else if(resourceLock.task_id)navigate(resourceLock.task_id);}}>{resourceLock.run_id?'查看阻塞 Run':'查看准备中的 Task'}</button></>}</div>
+      <div role={resourceLock?'alert':undefined} data-testid="current-resource" className={!resourcesReady||resourceLock?'warning':'hint'}>{!resourcesReady?'当前资源状态无法确认，暂停新运行。':resourceLock?'当前全局持锁，已阻止新运行。停止状态尚未确认，资源锁保持。请保留历史并检查本地受控进程。':'当前未持锁。'}{resourceLock&&<><span>{!resourcesReady?'上次读取的持锁对象 · ':''}{resourceLock.run_id??resourceLock.task_id??'准备中的请求'}</span><button type="button" className="link" onClick={()=>{const locked=runs.find(r=>r.id===resourceLock.run_id);if(locked)navigate(locked.task_id,locked.id);else if(resourceLock.task_id)navigate(resourceLock.task_id);}}>{resourceLock.run_id?'查看阻塞 Run':'查看准备中的 Task'}</button></>}</div>
       {!loaded&&<p data-testid="history-loading" role="status">正在读取本地任务与运行历史…</p>}
       {loaded&&selection.runId&&!run&&<p className="warning">所选 Run 不存在。请从运行历史选择已有记录。</p>}
       {active && <div className="active-strip">全局已有一个活动 Run。<button type="button" className="link" onClick={() => navigate(active.task_id, active.id)}>查看活动运行</button></div>}
