@@ -6,13 +6,14 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {startTestService} from '../../tools/test-service.mjs';
 import {fixtureCheckBudget,fixtureLimits} from '../../tools/verify-verification.mjs';
+import {agentTimeoutMs} from '../../apps/server/dist/contracts.js';
 
 // Two 10s reads on reopen need room for rendering and observation.
 const reopenedDetailBudget=22000;
 
-// Real Agent 180s, two captures, the 60s verification draft, seal replay,
+// Real Agent budget, two captures, the 60s verification draft, seal replay,
 // and the existing watchdog allowance for each of those five native boundaries.
-const initialPipelineBudget=180000+2*fixtureLimits.capture+60000+fixtureLimits.check+5*fixtureLimits.boundaryExit+fixtureLimits.persistence;
+const initialPipelineBudget=agentTimeoutMs+2*fixtureLimits.capture+60000+fixtureLimits.check+5*fixtureLimits.boundaryExit+fixtureLimits.persistence;
 
 test('sealed review survives restart, accepts one package and downloads after Workspace deletion',async({browser},info)=>{
  test.skip(!process.env.WORKOS_G1_EVIDENCE||!process.env.WORKOS_G2_EVIDENCE||process.platform!=='win32','Requires current Windows G1 and G2');

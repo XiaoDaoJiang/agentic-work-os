@@ -233,3 +233,21 @@ test('v2 held Run owner migrates intact to the preparation-aware v3 lock', t => 
         assert.throws(()=>reopened.reservePreparation(task.id,'blocked-by-v2-lock'),/资源/);
     } finally {reopened.close();}
 });
+
+
+test('Agent budget is finite and frozen independently of Verification and later Task edits', async t => {
+    const { directory, store, task, profile } = fixture(t);
+    const executor = new RealExecutor(store, join(directory, 'runs'), profile);
+    let launched;
+    executor.launch = run => { launched = run; };
+    try {
+        const { run } = await executor.start(task.id, 'agent-budget-request', { verify: true, expected_task_revision: task.revision });
+        assert.equal(launched.id, run.id);
+        assert.equal(run.input_snapshot.execution.timeout_ms, 600000);
+        assert.equal(run.input_snapshot.verification.verification_invocation_v0.timeout_ms, 60000);
+        store.updateTask(task.id, { goal: 'next attempt', definition_of_done: task.definition_of_done, repository_path: task.repository_path, verification_draft: { command: 'NEXT_NOT_RUN', timeout_seconds: 1 } });
+        const frozen = store.getRun(run.id).input_snapshot;
+        assert.equal(frozen.execution.timeout_ms, 600000);
+        assert.equal(frozen.verification.verification_invocation_v0.timeout_ms, 60000);
+    } finally { await executor.close(); }
+});

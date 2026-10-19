@@ -9,7 +9,7 @@ import { buildChangePackage, validateChangePackageBytes } from '../../../experim
 import { sealUniqueChangePackage } from '../../../experiments/milestone-0/src/change-package-seal.mjs';
 import { computeDeliveryIntegrity } from '../../../experiments/milestone-0/src/delivery-integrity.mjs';
 import { ensureRepositoryMarker } from '../../../experiments/milestone-0/src/repository-marker.mjs';
-import { ApiError, type Run, type RealSnapshot, type ExecutionStage, type VerificationSelection, type VerificationResult, type CapturedVersion, type Artifact, type ReviewRequest, type ResourceCheck, type ReviewContext } from './contracts.js';
+import { ApiError, agentTimeoutMs, type Run, type RealSnapshot, type ExecutionStage, type VerificationSelection, type VerificationResult, type CapturedVersion, type Artifact, type ReviewRequest, type ResourceCheck, type ReviewContext } from './contracts.js';
 import { Store } from './store.js';
 import { codexInvocation } from './codex-adapter.js';
 import { sourceRoot, sha256File, type ExecutionProfile } from './execution-profile.js';
@@ -116,7 +116,7 @@ export class RealExecutor {
             mkdirSync(directory, { recursive: true });
             const execution: RealSnapshot = { profile_id: 'windows-processkit-codex-exec', model: this.profile!.model, base_revision: source.head,
                 repository_identity: repository.repositoryIdentity, source_path: source.canonical, workspace_path: join(directory, 'workspace'),
-                receipt_path: join(directory, 'receipt.json'), runtime_id: randomUUID(), spawn_nonce: randomUUID(), timeout_ms: 180000,
+                receipt_path: join(directory, 'receipt.json'), runtime_id: randomUUID(), spawn_nonce: randomUUID(), timeout_ms: agentTimeoutMs,
                 executable: this.profile!.executable, codex_version: this.profile!.codex_version, helper_revision: this.profile!.helper_revision, ...(verification&&this.reviewGate()?{review_identity:this.reviewGate()!}:{}) };
             const invocation = codexInvocation(execution.workspace_path, this.prompt(task), execution.model);
             if (Buffer.byteLength(JSON.stringify(invocation.argv)) > 50000)

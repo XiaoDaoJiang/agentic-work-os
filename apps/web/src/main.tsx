@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 // Pure shared contract only; no server/runtime module is bundled into the browser.
-import { ApiError, parseTaskInput, type Task, type TaskInput, type Run, type RunLog, type Scenario, type RunEvidence, type ReviewContext } from '../../server/src/contracts';
+import { ApiError, agentTimeoutMs, parseTaskInput, type Task, type TaskInput, type Run, type RunLog, type Scenario, type RunEvidence, type ReviewContext } from '../../server/src/contracts';
 import './style.css';
 
 let sessionToken = '';
@@ -252,7 +252,7 @@ function App() {
             <label htmlFor="execution-mode">执行方式</label><select id="execution-mode" value={mode} disabled={busy || !!attempt.current} onChange={e => setMode(e.target.value as 'mock' | 'real')}><option value="mock">模拟 · 不读取仓库</option><option value="real" disabled={!capabilities.real_execution}>Codex · 当前 Windows profile</option></select>
             {mode === 'mock' && <><label htmlFor="scenario">模拟场景</label><select id="scenario" value={scenario} disabled={busy || !!attempt.current} onChange={e => setScenario(e.target.value as Scenario)}><option value="success">成功 · 固定模拟步骤</option><option value="failure">失败 · 模拟 Agent 阶段失败</option><option value="cancel">取消 · 固定模拟取消</option></select></>}
             {mode==='real' && <div className="verification-choice"><label><input type="checkbox" checked={verificationChoice?.taskId===task.id} disabled={busy||!!attempt.current} onChange={e=>setVerificationChoice(e.target.checked?{taskId:task.id,revision:task.revision,command:task.verification_draft.command,timeout:task.verification_draft.timeout_seconds}:null)} /> 本次执行验证</label><p className="hint">明确选择后，Agent 成功且安全退出才运行下面已保存的命令。表单中未保存的编辑不参与本次运行。</p><pre>{verificationChoice?.taskId===task.id ? verificationChoice.command : task.verification_draft.command}</pre><p className="hint">Task v{verificationChoice?.taskId===task.id?verificationChoice.revision:task.revision} · {verificationChoice?.taskId===task.id?verificationChoice.timeout:task.verification_draft.timeout_seconds} 秒 · Windows PowerShell · 独立工作副本</p></div>}
-            <button type="button" className="primary full" disabled={busy || !resourcesReady || !!active || !!resourceLock || (mode === 'real' && !capabilities.real_execution)} onClick={() => void start()}>{busy ? '操作中…' : mode === 'mock' ? '启动 mock Run' : '启动 Codex Run'}</button><p className="hint">{mode === 'mock' ? '每次新尝试单独保存。取消只停止模拟，不代表 OS 进程树终止。' : 'trusted-local，保留 Codex 原生权限限制。只支持干净的普通 Git 仓库；独立工作副本，Agent 最长 3 分钟，验证使用所选超时。取消需等待停止和输出收尾确认。'}</p>
+            <button type="button" className="primary full" disabled={busy || !resourcesReady || !!active || !!resourceLock || (mode === 'real' && !capabilities.real_execution)} onClick={() => void start()}>{busy ? '操作中…' : mode === 'mock' ? '启动 mock Run' : '启动 Codex Run'}</button><p className="hint">{mode === 'mock' ? '每次新尝试单独保存。取消只停止模拟，不代表 OS 进程树终止。' : `trusted-local，保留 Codex 原生权限限制。只支持干净的普通 Git 仓库；独立工作副本，Agent 最长 ${agentTimeoutMs / 60000} 分钟，验证使用所选超时。取消需等待停止和输出收尾确认。`}</p>
           </section>}
         </div>
         <div className="panel run-panel">{!selectedLoading&&<RunDetail key={run?.id??'empty'} resourcesReady={resourcesReady} resourceLock={resourceLock} run={run} onCancel={() => void cancel()} busy={busy} onChanged={changed=>setRuns(old=>old.map(item=>item.id===changed.id?changed:item))} />}

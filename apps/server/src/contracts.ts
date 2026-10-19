@@ -1,4 +1,5 @@
 // Pure input/types module: no filesystem, process, credentials or runtime imports.
+export const agentTimeoutMs = 600000;
 export interface TaskInput {
   goal: string;
   definition_of_done: string[];
