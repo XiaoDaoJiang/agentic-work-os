@@ -222,6 +222,10 @@ export class Store {
     const row=this.db.prepare("SELECT payload_json FROM events WHERE run_id=? AND type IN ('resource.reconciliation.succeeded','resource.reconciliation.blocked') ORDER BY sequence DESC LIMIT 1").get(id);
     return row?JSON.parse(String(row.payload_json)):null;
   }
+  lastSuccessfulReplay(id:string):ResourceCheck|null {
+    const row=this.db.prepare("SELECT payload_json FROM events WHERE run_id=? AND type='resource.reconciliation.succeeded' ORDER BY sequence DESC LIMIT 1").get(id);
+    return row?JSON.parse(String(row.payload_json)):null;
+  }
   decideReview(id:string,request:ReviewRequest):{run:Run;decision:ReviewDecision;replay:boolean} {
     return this.transaction(()=>{
       const previous=this.replayReview(id,request);

@@ -85,6 +85,7 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
   }
   const packageReadable=context?.artifacts.some(item=>item.artifact.type==='change_package'&&item.status==='healthy');
   const gateClosed=context?.blockers.some(reason=>reason.includes('G2'));
+  const resourceHeld=context?.blockers.some(reason=>reason.includes('保持全局锁'));
   const acceptBlocked=!context||context.blockers.some(reason=>!reason.startsWith('上次检查'));
   const result=evidence?.verification;
   return <section className="review-panel" aria-label="交付物审核">
@@ -98,7 +99,7 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
     {context?.blockers.map(reason=><p className="warning" key={reason}>{reason}</p>)}
     {context?.decision?<div className="review-decision"><strong data-testid="review-decision">{context.decision.decision==='accept'?'已接受交付物':'已拒绝本次结果'}</strong><p className="hint">{new Date(context.decision.decided_at).toLocaleString('zh-CN')} · 历史决定保持不变</p>
       {context.delivery_integrity&&<p data-testid="delivery-integrity" className={context.delivery_integrity.value==='healthy'?'notice':'error'}>{{healthy:'当前封存对象完整',missing:'当前交付物缺失',corrupt:'当前交付物损坏'}[context.delivery_integrity.value]}。接受记录不会因此改写。</p>}
-      {context.decision.decision==='accept'&&<button type="button" className="primary" disabled={busy||gateClosed||context.delivery_integrity?.value!=='healthy'} onClick={()=>void download()}>{busy?'检查交付物…':'检查并下载交付物'}</button>}
+      {context.decision.decision==='accept'&&<button type="button" className="primary" disabled={busy||gateClosed||resourceHeld||context.delivery_integrity?.value!=='healthy'} onClick={()=>void download()}>{busy?'检查交付物…':'检查并下载交付物'}</button>}
     </div>:<div className="review-actions"><button type="button" className="primary" disabled={busy||acceptBlocked||run.state!=='waiting_review'} onClick={()=>void decide('accept')}>{busy?'检查与提交中…':context?.last_check?.drift==='clear'?'接受交付物':'重新检查并接受'}</button><button type="button" className="danger" disabled={busy||gateClosed||!packageReadable||run.state!=='waiting_review'} onClick={()=>void decide('reject')}>拒绝本次结果</button></div>}
     <p className="hint">接受表示获得同一 Run 的可重放交付物，不会 merge、push 或发布。资源状态未知时继续阻止新运行。</p>
     {error&&<p role="alert" className="error">{error}</p>}

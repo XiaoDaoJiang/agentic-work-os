@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,renameSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join,relative,isAbsolute} from 'node:path';
+import {join,relative,isAbsolute,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {startTestService} from '../../tools/test-service.mjs';
@@ -25,6 +25,14 @@ test('sealed review survives restart, accepts one package and downloads after Wo
   for(const name of ['封存验证 stdout','封存验证 stderr'])await review.locator('summary').filter({hasText:name}).click();await expect(review).toContainText('review stdout');await expect(review).toContainText('review stderr');await page.screenshot({path:info.outputPath('waiting-review.png'),fullPage:true});
   const workspace=run.input_snapshot.execution.workspace_path,within=relative(directory,workspace);expect(within.startsWith('..')||isAbsolute(within)).toBe(false);rmSync(workspace,{recursive:true});
   await page.getByRole('button',{name:'接受交付物',exact:true}).click();await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物',{timeout:60000});await expect(page.getByText('done · 已接受可重放交付物',{exact:true})).toBeVisible();
+  const offline=join(directory,'source-offline');
+  const assertOwned=target=>{const within=relative(resolve(directory),resolve(target));expect(Boolean(within)&&!within.startsWith('..')&&!isAbsolute(within)).toBe(true);};
+  assertOwned(source);assertOwned(offline);renameSync(source,offline);
+  try{
+   const failedCheck=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===`/api/runs/${runId}/delivery`,{timeout:60000});
+   await page.getByRole('button',{name:'检查并下载交付物',exact:true}).click();expect((await failedCheck).status()).toBe(409);await expect(review.getByRole('alert')).toContainText('本次交付检查未通过');
+   await page.reload();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整');await expect(page.getByRole('button',{name:'检查并下载交付物',exact:true})).toBeEnabled();await expect(review).toContainText('上次检查存在漂移或无法确认');
+  }finally{assertOwned(offline);assertOwned(source);renameSync(offline,source);}
   const downloadPromise=page.waitForEvent('download',{timeout:60000});await page.getByRole('button',{name:'检查并下载交付物',exact:true}).click();const download=await downloadPromise,downloadPath=await download.path();expect(createHash('sha256').update(readFileSync(downloadPath)).digest('hex')).toBe(before.package.sha256);
   const objectPath=join(data,'runs','artifacts',before.package.content_location),original=readFileSync(objectPath);writeFileSync(objectPath,'fixture damage');await expect(page.getByTestId('delivery-integrity')).toContainText('当前交付物损坏',{timeout:10000});await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物');await expect(page.getByRole('button',{name:'检查并下载交付物',exact:true})).toBeDisabled();writeFileSync(objectPath,original);await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整',{timeout:10000});
   await page.screenshot({path:info.outputPath('accepted-delivery.png'),fullPage:true});expect(git(['status','--porcelain','--untracked-files=all'])).toBe('');expect(errors).toEqual([]);await info.attach('fixture-location',{body:JSON.stringify({directory,runId}),contentType:'application/json'});

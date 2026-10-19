@@ -3,7 +3,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm, lstat } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, lstat } from 'node:fs/promises';
 
 const exec = promisify(execFile);
 const limit = 8 * 1024 * 1024;
@@ -15,7 +15,7 @@ function checkedPath(value) {
   if (!value || value.includes('\\') || /[\x00-\x1f]/.test(value) || path.posix.isAbsolute(value) || value.split('/').some(x=>x==='..'||x==='.git'||!x)) throw new Error('unsupported Git path');
   return value;
 }
-export async function captureWorkspaceVersion({workspace,baseRevision,gitExecutable='git'}) {
+export async function captureWorkspaceVersion({workspace,baseRevision,gitExecutable='git',trackedPaths=[]}) {
   if (!workspace || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseRevision)) throw new Error('workspace and full baseRevision required');
   const directory=await mkdtemp(path.join(os.tmpdir(),'m0-git-index-'));
   const env={...safeEnv(),GIT_INDEX_FILE:path.join(directory,'index')};
@@ -32,10 +32,11 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
     }
     return modes;
   };
+  let actualModes;
   const inspect=async()=>{
     await head();
     if(await lstat(path.join(workspace,'.gitattributes')).catch(()=>null)) throw new Error('attributes content conversion unsupported');
-    const records=decode(await git(['ls-files','--cached','--others','--exclude-standard','-z'])).split('\0').filter(Boolean);
+    const records=[...new Set([...decode(await git(['ls-files','--cached','--others','--exclude-standard','-z'])).split('\0').filter(Boolean),...Object.keys(actualModes),...trackedPaths])];
     const result=Object.create(null); let size=0;
     for (const file of [...new Set(records)].sort()) {
       checkedPath(file);
@@ -65,10 +66,13 @@ export async function captureWorkspaceVersion({workspace,baseRevision,gitExecuta
     if(await lstat(path.join(gitDir,'info','attributes')).catch(()=>null)) throw new Error('info attributes unsupported');
     const config=await text(['config','--local','--list']);
     if(/^(?:filter\.|include\.|includeif\.|extensions\.worktreeconfig=|core\.(?:autocrlf=(?!false)|eol=|attributesfile=))/mi.test(config)) throw new Error('local content conversion/filter/include unsupported');
-    const actualModes=await indexModes();
-    await git(['read-tree',baseRevision]);
+    actualModes=await indexModes();
+    await git(['read-tree',headRevision]);
     const before=await inspect();
     await git(['add','-A','--','.']);
+    // Agent force-adds remain tracked even when ignore rules exclude new files.
+    const tracked=[...new Set([...Object.keys(actualModes),...trackedPaths])].filter(file=>before[file]);
+    if(tracked.length){const paths=path.join(directory,'tracked-paths');await writeFile(paths,tracked.join('\0')+'\0');await git(['--literal-pathspecs','add','-f','--pathspec-from-file='+paths,'--pathspec-file-nul']);}
     const resultTreeHash=await text(['write-tree']);
     const objectFormat=await text(['rev-parse','--show-object-format']);
     if(!['sha1','sha256'].includes(objectFormat)) throw new Error('unsupported object format');

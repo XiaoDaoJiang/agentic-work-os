@@ -272,10 +272,11 @@ export class RealExecutor {
         if(!run.input_snapshot.execution?.review_identity||this.reviewGate()!==run.input_snapshot.execution.review_identity)blockers.push('当前 G2 未开放；已封存历史只读');
         if(this.store.resourceLock())blockers.push('资源状态未知或检查中，保持全局锁');
         if(this.store.getRunEvidence(id).verification?.version_match!=='match')blockers.push('验证前后版本不一致，拒绝后创建新的执行');
-        if(check?.drift!=='clear')blockers.push('上次检查存在漂移或无法确认，接受前将重新检查');
+        if(check?.drift!=='clear')blockers.push('上次检查存在漂移或无法确认，接受或下载前将重新检查');
+        const replay=this.store.lastSuccessfulReplay(id);
         const delivery_integrity=await computeDeliveryIntegrity({store:{root:this.artifactRoot()},db:this.store.db,runId:id,
             manifestValidator:()=>{try{this.sealed(run);return true;}catch{return false;}},
-            replayValidator:bytes=>{try {const manifest=validateChangePackageBytes(bytes);return check?.package_sha256===createHash('sha256').update(bytes).digest('hex')&&check.replay?.base_revision===manifest.base_revision&&check.replay.result_tree_hash===manifest.result_tree_hash;}catch{return false;}}});
+            replayValidator:bytes=>{try {const manifest=validateChangePackageBytes(bytes);return replay?.package_sha256===createHash('sha256').update(bytes).digest('hex')&&replay.replay?.base_revision===manifest.base_revision&&replay.replay.result_tree_hash===manifest.result_tree_hash;}catch{return false;}}});
         return {package:rows.find(row=>row.type==='change_package')??null,decision,artifacts,blockers,diff,last_check:check,delivery_integrity};
     }
     private assertReviewGate(run:Run) {

@@ -104,10 +104,13 @@ export async function replayChangePackage({ bytes, checkout, gitExecutable = 'gi
     await chmod(operation.target,operation.mode==='100755'?0o755:0o644);
   }
 
+  // Replay declares tracked upserts to the same checked temporary-index capture.
+  // This keeps config/attribute validation ahead of Git add and leaves the real index intact.
   const replayTree = await computeResultTreeHash({
     workspace: resolvedCheckout,
     baseRevision: manifest.base_revision,
-    gitExecutable
+    gitExecutable,
+    trackedPaths: operations.filter(operation=>operation.op==='upsert').map(operation=>operation.path)
   });
   if (replayTree.objectFormat !== manifest.git_object_format) throw new Error('replay object format changed unexpectedly');
   if (replayTree.resultTreeHash !== manifest.result_tree_hash) {
