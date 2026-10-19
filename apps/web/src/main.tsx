@@ -16,7 +16,7 @@ function readSession() {
 async function api<T>(path: string, method = 'GET', value?: unknown): Promise<T> {
   if (method !== 'GET' && !sessionToken) await readSession();
   const response = await fetch(path, { method, cache: 'no-store',
-    ...(['/api/session', '/api/capabilities'].includes(path) ? { signal: AbortSignal.timeout(10000) } : {}),
+    ...(method === 'GET' ? { signal: AbortSignal.timeout(10000) } : {}),
     headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-WorkOS-Session': sessionToken },
     ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
   const data = await response.json();
@@ -111,7 +111,7 @@ function ReviewPanel({run,evidence,onChanged,resourcesReady,resourceLock}:{run:R
     {!result&&<p>{evidence?'验证结果尚未形成；不会推断通过。':'正在读取验证证据…'}</p>}
     {result&&result.outcome!=='passed'&&<p className="warning">验证未通过。请结合冻结目标与变更自行判断，接受不会把失败的验证改写为通过。</p>}
     {(['stdout','stderr'] as const).map(stream=><details key={stream}><summary>封存验证 {stream}</summary><pre>{context?.diff!==null?evidence?.output.filter(row=>row.stage==='verification'&&row.stream===stream).map(row=>row.text).join('')||'没有输出':'封存证据不可用'}</pre></details>)}
-    {!context?.decision&&<><p className="hint">尚无人工决定。</p><p data-testid="package-integrity" className={currentRead&&sealedHealthy?'notice':'warning'}>{!context&&!readError?'正在读取封存完整性…':!currentRead?'当前封存完整性无法确认，等待读取恢复。':!context?.package||!context.artifacts.length?'尚无完整封存交付物。':sealedHealthy?'当前封存证据完整。':`当前封存证据异常 · ${context.artifacts.filter(item=>item.status!=='healthy').map(item=>`${item.artifact.type} ${item.status==='missing'?'缺失':'损坏'}`).join('、')}`}</p></>}
+    {(!context?.decision||context.decision.decision==='reject')&&<><p className="hint">{context?.decision?'本次已拒绝，未产生已接受交付物。':'尚无人工决定。'}</p><p data-testid="package-integrity" className={currentRead&&sealedHealthy?'notice':'warning'}>{!context&&!readError?'正在读取封存完整性…':!currentRead?'当前封存完整性无法确认，等待读取恢复。':!context?.package||!context.artifacts.length?'尚无完整封存交付物。':sealedHealthy?'当前封存证据完整。':`当前封存证据异常 · ${context.artifacts.filter(item=>item.status!=='healthy').map(item=>`${item.artifact.type} ${item.status==='missing'?'缺失':'损坏'}`).join('、')}`}</p></>}
     {context?.blockers.map(reason=><p className="warning" key={reason}>{reason}</p>)}
     {context?.decision?<div className="review-decision"><strong data-testid="review-decision">{context.decision.decision==='accept'?'已接受交付物':'已拒绝本次结果'}</strong><p className="hint">{new Date(context.decision.decided_at).toLocaleString('zh-CN')} · 历史决定保持不变</p>
       <p data-testid="review-next-step" className="notice">下一步 · {!currentRead?'等待读取恢复，当前审核与资源状态无法确认。':context.decision.decision==='reject'?'保留拒绝决定，调整任务后显式发起下一次尝试。':resourceLock?'先检查当前全局持锁对象，暂停交付物下载。':context.delivery_integrity?.value!=='healthy'?'当前交付物不可下载，保留接受记录并检查本地封存对象。':'查看当前完整性，检查并下载交付物。'}</p>
