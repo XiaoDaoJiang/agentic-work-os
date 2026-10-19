@@ -13,7 +13,7 @@ async function fixture(page){
  const state={hold:null,offline:false,reviewOffline:false,lock:null,writes:0,reads:0,facts:{resource_state:'safe'},delayedFacts:null,runs,review:null};
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(route.request().method()!=='GET'){state.writes++;await route.fulfill({json:task});return;}
+  if(route.request().method()!=='GET'){state.writes++;await route.fulfill({json:path.endsWith('/cancel')?{...state.runs[0],state:'cancelled'}:task});return;}
   if(path==='/api/session'){await route.fulfill({json:{session_token:'ui-only',real_execution:false,accept:false,codex_profile:{reason:'UI fixture，不是真实执行'}}});return;}
   if(state.hold&&['/api/tasks','/api/runs','/api/resource-lock'].includes(path))await state.hold;
   if(state.offline){await route.abort('failed');return;}
@@ -65,7 +65,8 @@ test('UI injection: review read failure closes stale actions and recovery clears
   await expect(accept).toBeEnabled();
   await expect(page.getByTestId('historical-resource')).toContainText('当时已确认安全');
   state.lock={run_id:'other-run',task_id:null,facts:{resource_state:'unknown'}};
-  await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');await expect(accept).toBeDisabled();state.lock=null;
+  await expect(page.getByTestId('current-resource')).toContainText('当前全局持锁');await expect(accept).toBeDisabled();
+  await expect(page.getByRole('button',{name:'拒绝本次结果',exact:true})).toBeEnabled();state.lock=null;
   await expect(accept).toBeEnabled();state.reviewOffline=true;
   await expect(page.getByTestId('review-read-status')).toContainText('无法确认');await expect(accept).toBeDisabled();
   await expect(page.getByTestId('review-diff')).toContainText('long');
@@ -75,7 +76,7 @@ test('UI injection: review read failure closes stale actions and recovery clears
   const download=page.getByRole('button',{name:'检查并下载交付物',exact:true});
   await expect(download).toBeEnabled();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整');
   await expect(page.getByTestId('review-next-step')).toContainText('检查并下载');
-  state.offline=true;await expect(page.getByTestId('current-resource')).toContainText('无法确认');await expect(download).toBeDisabled();state.offline=false;
+  state.offline=true;await expect(page.getByTestId('current-resource')).toContainText('无法确认');await expect(download).toBeDisabled();await expect(page.getByTestId('delivery-integrity')).toContainText('无法确认');state.offline=false;
   await expect(download).toBeEnabled();
   for(const [value,text] of [['missing','当前交付物缺失'],['corrupt','当前交付物损坏']]){
    state.review={...state.review,delivery_integrity:{value}};
@@ -131,4 +132,17 @@ test('UI injection: delayed old facts never replace the selected historical reco
   await expect.poll(()=>state.reads).toBeGreaterThanOrEqual(4);
   await expect(page.getByTestId('historical-resource')).toContainText('未记录资源事实');await expect(page.getByTestId('frozen-goal')).toHaveText('第二次冻结目标');
  }finally{release();await page.close();await service.stop();}
+});
+
+test('UI injection: unknown reads keep explicit keyboard Cancel available without an automatic retry',async({page})=>{
+ const {service,state}=await fixture(page);state.runs=[{...run('running-run','可请求取消'),execution_mode:'real',state:'running',phase:'agent'}];
+ try{
+  await page.goto(`${service.origin}/#task=${task.id}&run=running-run`);
+  const cancel=page.getByRole('button',{name:'请求取消 Codex',exact:true});await expect(cancel).toBeEnabled();state.offline=true;
+  await expect(page.getByTestId('current-resource')).toContainText('无法确认');await expect(cancel).toBeEnabled();
+  await page.getByText('编辑下一次运行的任务输入',{exact:true}).focus();
+  for(let index=0;index<30&&!await cancel.evaluate(node=>node===document.activeElement);index++)await page.keyboard.press('Tab');
+  await expect(cancel).toBeFocused();await page.keyboard.press('Space');await expect.poll(()=>state.writes).toBe(1);
+  state.offline=false;await expect.poll(()=>state.reads).toBeGreaterThanOrEqual(4);expect(state.writes).toBe(1);
+ }finally{await page.close();await service.stop();}
 });
