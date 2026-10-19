@@ -1,15 +1,34 @@
 # FMVP-04 封存交付物与 Human Review
 
-日期 2026-10-16。状态 IN_PROGRESS。从 `88caed5` 建立 `codex/fmvp-04-review`。本切片让用户审核同一 Run 的不可变、可重放 Change Package，并保留接受或拒绝的历史事实。G2 未验收前，生产 Accept/Delivery 继续关闭。
+日期 2026-10-19。状态 DONE（限定已验收 Windows profile）。从 `88caed5` 建立 `codex/fmvp-04-review`。本切片让用户审核同一 Run 的不可变、可重放 Change Package，并保留接受或拒绝的历史事实。真实 Accept/Delivery 默认关闭，仅当前 G1/G2 同时匹配才开放；不代表原联合 Gate PASS 或 main 已合并。
 
 ## 实施清单
 
 - [x] Ground。核对既有 Artifact/Change Package/replay 与应用 Run/Schema/资源锁；两份独立只读调查与综合已完成，未计为执行验收。
 - [x] Sketch。两个独立结构候选，按证据一致性、故障恢复、接口体积、兼容性、用户路径交叉评估。
 - [x] Agree。采用 B，吸收 A 的单文件 capture envelope；主协调者完整阅读两份方案，与独立评审结论一致。不新增人工审批关卡。
-- [ ] Implement。一个 owner，行为测试在先，复用候选并接入 API/UI。
-- [ ] Verify。删除 Workspace 后重放、写入/登记故障、损坏/缺失、重复决定、等待 Review 重启与浏览器检查。
-- [ ] Local delivery。精确代码与运行证据，更新入口，原有改动保留。
+- [x] Implement。一个 owner，行为测试在先，复用候选并接入 API/UI。
+- [x] Verify。删除 Workspace 后重放、写入/登记故障、损坏/缺失、重复决定、等待 Review 重启与浏览器检查。
+- [x] Local delivery。精确代码与运行证据，更新入口，原有改动保留。
+
+## 最终验收
+
+运行代码固定身份为 `dd83333077dead4edb60e868704655878aa6942fa24052d7db1d545236bec206`。G1记录提交a678b37，G2记录f41cfea，后续仅前端和E2E修改至866dc6d；执行身份保持相同。主协调者在真实浏览器结束后再次实际核对两份manifest匹配。以下均为2026-10-19本机证据，未运行的平台不计通过。
+
+| 检查 | 实际结果与本地证据（verification-output/fmvp-04/） |
+|---|---|
+| 当前真实G1 | 18/18，exit0；`g1-a678b37-20261019.txt`、`workos-g1-Fl2n6T/g1.json` |
+| 当前完整G2 | 18/18，exit0，activation=passed；`g2-a678b37-20261019.txt`及同名目录g2.json |
+| 服务端、迁移、不可变保护 | 41/41，exit0；`server-review-final-20261019.txt` |
+| 原生重放/审核边界、ignored文件 | 9/9及2/2，exit0；`review-current-source-20261019.txt`、`ignored-tracked-final-20261019.txt` |
+| 当前mock与会话浏览器 | 6/6，session10100 exit0；`mock-session-866d-20261019.txt`及同名目录；含01两项mock和4项会话/恢复。早期2/2记录另保留 |
+| 会话与恢复UI | 上述4项含实际服务重启与明确重试；单独证据另见`restart-session-diagnosis-20261019/green.txt`；注入场景不计真实CLI |
+| 真实执行/取消/owner-loss UI | 1/1，session71718 exit0；`execution-ui-866d-20261019.txt`及同名截图目录 |
+| 真实Verification UI | 1/1；`real-ui-regression-9957-20261019.txt`中的03通过，02旧日志定位失败另行保留 |
+| 真实审核/下载UI | 1/1，session50032 exit0；`review-ui-866d-20261019.txt`及waiting-review/accepted-delivery截图 |
+| 类型与构建 | exit0；`save-latency-diagnosis/20261019-probe/`内日志及summary.md |
+
+最后的04用例实际完成待审重启、冻结目标/Diff/验证输出读取、删除Workspace后接受同包、source暂不可用时下载拒绝、恢复source后下载hash一致、损坏后禁用下载且历史接受不变、恢复同字节后完整。原source分支与工作区保持未修改。主协调者已查看最终截图。剩余恢复解释、加载/连接状态、键盘/窄屏及整体UI统一由05继续；真实Founder任务由06继续，不能由本fixture替代。
 
 ## 吞吐检查
 
@@ -49,6 +68,30 @@ Verification 的 failed/error 是审核证据，区别于 Run 的 failed/cancell
 同一固定提交的完整 G2 诊断随后完成，15 个现有场景全部通过，退出码 0。证据为 `g2-diagnostic-eea5feed-20261019.txt` 及同名目录中的 `g2.json`；该 manifest 的 activation 明确为 diagnostic_only，没有当前 G1，未激活产品能力。
 
 两份独立只读审查发现现有用例未覆盖的两个问题。临时 index 从 frozen base 初始化，会遗漏 Agent 强制加入并提交的 ignored 文件；已接受结果的一次安全重放失败，会令界面禁用唯一重新检查下载入口。主协调者读取调用链后采纳，要求先复现、修复和补回归，再生成新版本验收。两席继承同一模型，不属于跨模型验证。报告与裁决位于 `verification-output/fmvp-04/review/`。现有 15 项诊断通过不能证明这两项边界正确。
+
+默认未提供 G1/G2 的 mock 浏览器回归实际运行 2/2 通过，退出码 0，见 `mock-ui-20261019.txt` 和同名截图目录。覆盖创建输入、模拟日志、关闭页面、重启读取、运行中强杀恢复、失败与取消；主协调者已查看本轮成功截图。这只证明当前 mock 路径，不证明真实 Review、下载恢复或最终 UI 验收。
+
+两项审查问题的复现命令先得到 0/3、退出码 1，红测试保留在 `review-red-20261019.txt`。修复提交为 `21fa5e85dca9424998a53c05451774cff382aacf`。捕获临时 index 从固定 Agent HEAD 开始，同时保留实际 index 已追踪文件；最终 Diff 仍相对 frozen base。重放把 Package upsert 路径传给同一受检查的临时 index 捕获，不改真实 index。完整性读取同包最近成功重放证明，最新失败原因仍单独显示；下载继续强制新受控检查。
+
+当前修复后的服务端测试为 41/41、重放与审核边界 9/9、ignored 文件 committed/staged 专项 2/2，退出码均为 0；类型检查与构建也退出 0。主协调者已读取修复差异和测试断言。边界用例实际覆盖四类必需证据各自缺失/损坏、待审 source/Workspace 漂移与恢复、检查完成后 Gate 失效、Accept/Reject 竞争、首个 Artifact 插入后的 Cancel。对应日志为 `server-review-final-20261019.txt`、`review-current-source-20261019.txt`、`ignored-tracked-final-20261019.txt`、`typecheck-review-final-20261019.txt` 和 `build-review-final-20261019.txt`。新版 G2 扩展为18项，尚待完整运行；浏览器已补恢复用例，尚未执行。真实 G1 正按冻结提交验证，未取得结论前不开放能力。
+
+同一冻结提交的真实 G1 已随后完成18项检查，session90098退出码0，`readExecutionProfile` 实际返回匹配。日志为 `g1-21fa5e8-20261019.txt`，manifest 为 `workos-g1-1dO8Sw/g1.json`。环境为 Windows x64 / 10.0.19045、Node v24.16.0、Git 2.51.2.windows.1、Rust 1.92.0、Codex CLI 0.162.0-alpha.17.2、模型 gpt-6.1-sol。精确可执行文件、helper、shell及源码hash保存在本地manifest。G2与真实审核浏览器仍未完成，不能把G1当作04完成或Accept/Delivery已开放。
+
+该版本的完整G2运行随后在非零场景等待超时，session10487退出1。前5项诊断通过不构成完整G2通过，未产生可开放manifest。失败输出保留为 `g2-21fa5e8-20261019.txt`。只读检查原fixture数据库确认四阶段依次为agent exit0、capture-before exit0、verification exit7、capture-after exit0，均safe/drained。Run在01:47:19Z创建、01:47:45Z开始封存重放、01:48:20Z因测试finally关闭而成为cancelled_during_seal，锁已安全释放。诊断总等待60秒早于该多阶段链路的合法总预算，其中单次重放本已有120秒上限。下一修复仅调整测试的有界观察预算，不修改产品超时、业务断言或历史失败。验收工具属于执行身份的一部分，因此修复后必须重新匹配G1/G2，不能改写旧manifest套用。
+
+修复提交为 `a678b37cf10eb8f982ab274a5e7bba4b51a8d12d`，仅5个诊断工具文件。共享fixture工具从既定阶段上限推导有限观察预算，含审核链路370秒、非审核230秒、单次检查150秒；setup的7次Git实际调用各设30秒上限。子测试套件也按顺序包含的pipeline/check计算父预算，不取消或缩减断言。新建原生nonzero fixture与预算自检2/2通过，31.55秒进入审核、55.08秒完成接受，所有边界safe/drained且锁释放；导入、自检、语法及diff检查均通过。证据为 `g2-nonzero-budget-20261019.txt/.json`、`budget-import-20261019.txt`、`budget-unit-final-20261019.txt` 和原失败的只读摘要 `g2-timeout-readonly-diagnosis-20261019.json`。当前新G1已按新身份开始，21fa5e8的通过保持历史记录，不外推为此提交通过。
+
+新身份的完整G1随后实际通过，session7691退出0，日志为 `g1-a678b37-20261019.txt`，manifest为 `workos-g1-Fl2n6T/g1.json`，记录的code_sha为a678b37。主协调者实际调用 `readExecutionProfile` 确认匹配，source identity为 `dd83333077dead4edb60e868704655878aa6942fa24052d7db1d545236bec206`。当前18项G2已开始，真实审核浏览器仍待执行；不把G1通过替代04完成。
+
+完整当前G2随后实际通过18项检查，session24772退出0。日志为 `g2-a678b37-20261019.txt`，manifest为 `g2-a678b37-20261019/g2.json`，activation为passed。G1记录a678b37，G2结束时HEAD为 `f41cfea22c6046ba7b5c68a9849f7afe234eca1a`；后者仅调整E2E04观测期限，执行身份未变。主协调者实际调用readExecutionProfile与readReviewProfile，确认两份manifest匹配当前源码、构建和本机工具。仅提供两份匹配manifest时开放该profile的真实审核/交付，不外推其他平台或旧联合Gate。
+
+当前真实浏览器回归首轮02/03共1通过、1失败，session45944退出1。03的真实验证与重开证据通过；02在首次保存提示的5秒断言超时，失败截图已呈现保存后的Task，且trace归档未正常完成，原因仍在核对。输出保留在 `real-ui-regression-a678-20261019.txt` 与同名目录。不能将此轮写成执行/取消/owner-loss UI回归通过。04审核浏览器正在独立执行，尚无完成结论。
+
+首次保存延迟的有界HTTP诊断确认同步能力哈希阻塞请求队列。同一临时服务中，合法Task独立保存7ms、capabilities2160ms、session2238ms；能力检查在途时，原43ms的tasks读取等待2156ms。均为本机该次诊断，不代表通用性能指标。证据为 `save-latency-diagnosis/20261019-probe/http-timeline.json`，原先空验证草稿的400诊断另保留。未启动Run，服务已关闭。修复限定前端初始化会话合并与能力/状态轮询拆分，不修改后端Gate或扩大保存提示断言期限；UI故障注入测试已先复现旧实现未初始化session，完整修复与原真实用例尚待验证。
+
+前端修复提交为 `9957bedb6d5c469e32639290295c6e1cb85362cc`，仅main.tsx与session-readiness浏览器用例。UI故障注入先3项失败、后3/3通过，类型检查、构建与diff检查退出0；执行身份仍为dd833330。初始化共享在途session；能力30秒慢轮询，失败关闭可用状态；任务、运行和锁保持原快轮询。原后端校验和02/04五秒保存断言均保留。新真实02已完成保存与正常Codex执行，接着旧日志断言因终态日志折叠而失败，不能计为全用例通过；测试提交 `56aebbba3222b80d5c842ee6e17f59bf0f983e79` 仅在读取前通过summary展开日志，原turn.completed断言与时限不变。当前完整真实02/04验收仍待重跑。
+
+9957bed的真实03再次通过，02仍因旧日志定位失败，完整该轮为1通过/1失败、session69727退出1。主协调者查看了 `real-ui-regression-9957-20261019` 中真实验证截图。04下一轮已完成真实Agent、Verification、封存、待审持久化和重启后的Diff/stdout/stderr展示，session13205仍退出1：接受请求被403拒绝，截图明确提示服务重启后需刷新并取得当前本地会话。原测试仅对同一个带hash地址执行goto，正在用无Run诊断确认是否保留旧文档会话；不移除来源/会话校验，也不把该失败写成审核成功。证据为 `review-ui-9957-20261019.txt` 及该轮waiting-review/失败截图。截图还观察到连接恢复后旧Failed to fetch仍显示，这属于05已列出的恢复体验缺口，不宣称最终UI完成。
 
 ## 采用的结构
 

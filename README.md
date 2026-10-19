@@ -2,13 +2,13 @@
 
 项目原生的人机协同工作控制面：组织目标、调用本地 Coding Agent、审核交付物，并保留可恢复的工作历史。
 
-## 当前阶段：FMVP-03 已通过当前 Windows profile 验收
+## 当前阶段：FMVP-04 已通过限定 Windows profile 验收
 
-当前实现分支为 `codex/fmvp-03-verification`，目标基线为 `mvp/founder-foundation`。2026-10-16 在 Windows x64 / Node 24.16.0 完成 FMVP-01 至 FMVP-03 验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放，默认仍为 mock；Accept 和 Delivery 仍关闭。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
+本地实现栈已完成 FMVP-01 至 FMVP-04，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
 
 已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
 
-真实路径支持独立 Git 工作副本、Codex 输出持久化、取消与未知资源持锁。明确选择“本次执行验证”后，Agent 成功且安全退出才运行冻结的命令，展示 stdout/stderr、退出结果和验证前后 Diff。版本变化时不把最终版本显示成已验证；未选择验证则仍为“Agent 已退出 · 尚未验证”。Task 不会因此变为 done。
+真实路径支持独立 Git 工作副本、Codex 输出持久化、取消与未知资源持锁。明确选择“本次执行验证”后，Agent 成功且安全退出才运行冻结的命令，展示 stdout/stderr、退出结果和验证前后 Diff。G2匹配时将同次证据与Change Package封存，人工接受后才使对应Task变为done。接受与下载均强制受控漂移/重放检查；删除Workspace后仍可交付，原source须保有frozen base。done不表示merge、push或发布。未选择验证仍为“Agent 已退出 · 尚未验证”。
 
 ## 启动
 
@@ -26,11 +26,12 @@ npm run dev
 本机已验收 profile 可显式启用真实执行：
 
 ```powershell
-$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-03/workos-g1-p0Vnjl/g1.json).Path
+$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-04/workos-g1-Fl2n6T/g1.json).Path
+$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-04/g2-a678b37-20261019/g2.json).Path
 npm start
 ```
 
-页面仍默认 mock，保存 Task 后可选择 Codex，并选择本次是否执行已保存的验证命令。要求干净的普通 Git 根仓库，不支持 submodule；Agent 最长执行三分钟，验证使用所选超时，当前不支持 Agent 自行 commit。捕获限普通文件和 8 MiB，不支持 attributes/filter 等内容转换。证据只适用于本机当前执行代码、CLI、helper、PowerShell 与环境；缺失或不匹配时关闭真实能力。重新验收、回退与限制见 [FMVP-03 记录](docs/mvp/03-fmvp-03-implementation.md)。
+以上manifest是本机忽略目录内的验收产物，新克隆不会自带。页面仍默认mock，保存Task后选择Codex，并明确选择本次验证。要求干净的普通Git根仓库，不支持submodule；Agent最长三分钟，验证使用所选超时。验证路径按frozen base捕获Agent提交和未提交变更；未验证路径仍对HEAD变化报漂移。捕获限普通文件和8MiB，不支持attributes/filter等内容转换。证据仅适用于所记录执行代码、CLI、helper、PowerShell与环境，不匹配即关闭对应真实能力。验收与限制见[FMVP-04记录](docs/mvp/04-fmvp-04-implementation.md)。
 
 ## 验证
 
@@ -49,11 +50,20 @@ $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = 'C:\Program Files\Google\Chrome\Appli
 npm run test:e2e
 ```
 
-测试使用临时数据目录。真实 UI 测试需要有效的 `WORKOS_G1_EVIDENCE`，会真实调用 Codex；未提供时跳过，不计为真实验收通过。当前 Playwright 1.52 的 Node 24 ESM loader 会挂起；测试入口仅为纯 `.mjs` 测试关闭该转换器，应用 TypeScript 构建不受影响。验收记录见 [FMVP-01](docs/mvp/01-fmvp-01-implementation.md)、[FMVP-02](docs/mvp/02-fmvp-02-implementation.md)和 [FMVP-03](docs/mvp/03-fmvp-03-implementation.md)。
+测试使用临时数据目录。未提供G1/G2时真实UI用例会跳过，不计为真实验收。实际profile测试会调用Codex，应串行执行：02/03只设置G1并移除G2，04同时设置两份当前证据。
+
+```powershell
+Remove-Item Env:WORKOS_G2_EVIDENCE -ErrorAction SilentlyContinue
+node tools/test-e2e.mjs tests/e2e/fmvp-02.spec.mjs tests/e2e/fmvp-03.spec.mjs
+$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-04/g2-a678b37-20261019/g2.json).Path
+node tools/test-e2e.mjs tests/e2e/fmvp-04.spec.mjs
+```
+
+Playwright 1.52在Node 24的ESM loader会挂起；现有入口仅为纯.mjs测试关闭该转换器，应用TypeScript构建不受影响。详细证据见各切片实施记录，当前汇总见[FMVP-04](docs/mvp/04-fmvp-04-implementation.md)。
 
 ## 下一项
 
-[FMVP-04](docs/pm/70-mvp-wwa-backlog.md) 接入 Sealed Change Package 与 Human Review。已有验证结果是历史捕获证据，当前 Workspace 未重新检查，尚无可重放的封存交付物。G2 继续控制审核接受与交付；下一切片读取其 WWA，并复用现有 Artifact 与重放候选。
+[FMVP-05](docs/pm/70-mvp-wwa-backlog.md)整合重开后的冻结目标、资源事实、异常与下一步，并完成UI统一回归。之后通过应用处理发起者已提供的Power Tool真实任务；当前尚未取得Founder闭环，不用演示fixture替代。
 
 | 入口 | 内容 |
 |---|---|
