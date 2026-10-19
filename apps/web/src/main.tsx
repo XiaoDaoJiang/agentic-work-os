@@ -30,6 +30,8 @@ const message = (error: unknown) => error instanceof Error ? error.message : '�
 const states: Record<Run['state'], string> = { waiting_review:'待审核', completed:'审核完成', running: '模拟运行中', succeeded: '模拟成功', failed: '模拟失败', cancelled: '模拟取消', interrupted: '模拟中断' };
 const stateLabel = (run: Run) => run.execution_mode === 'mock' ? states[run.state] : run.input_snapshot.verification ? ({waiting_review:'等待人工审核',completed:'审核完成',running:'执行与验证中',succeeded:'验证命令通过 · 捕获版本一致',failed:'执行或验证未通过',cancelled:'已确认取消',interrupted:'停止状态未知 · 资源保持锁定'})[run.state] : ({ waiting_review:'等待人工审核',completed:'审核完成', running: 'Codex 执行中', succeeded: 'Agent 已退出 · 尚未验证', failed: 'Agent 执行失败', cancelled: '已确认取消', interrupted: '停止状态未知 · 资源保持锁定' })[run.state];
 const phases = ['prepare', 'agent', 'test', 'review', 'complete'];
+const phaseLabels: Record<string,string> = {prepare:'准备',agent:'执行',test:'验证',review:'人工审核',complete:'完成'};
+type ResourceLock = {run_id:string|null;task_id:string|null;facts:unknown}|null;
 function readLocation() { const q = new URLSearchParams(location.hash.slice(1)); return { taskId: q.get('task') ?? '', runId: q.get('run') ?? '' }; }
 
 function TaskForm({ task, onSaved }: { task?: Task; onSaved: (task: Task) => void }) {
@@ -96,8 +98,7 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
   const acceptBlocked=!context||context.blockers.some(reason=>!reason.startsWith('上次检查'));
   const result=evidence?.verification;
   return <section className="review-panel" aria-label="交付物审核">
-    <span className="eyebrow">FROZEN RESULT</span><h3>本次目标</h3><p className="frozen-goal">{run.input_snapshot.task.goal}</p>
-    <ul className="dod-list">{run.input_snapshot.task.definition_of_done.map((item,index)=><li key={index}>{item}</li>)}</ul>
+    <span className="eyebrow">FROZEN RESULT</span>
     <h3>最终变更</h3>{context?.diff!==null&&context?.diff!==undefined?<pre data-testid="review-diff" className="review-diff">{context.diff||'没有文件变更'}</pre>:<p className="warning">封存变更尚不可读取。</p>}
     <h3>验证结果</h3><pre>{run.input_snapshot.verification?.requested_command}</pre>
     {result&&<p data-testid="verification-result"><strong>{{passed:'命令通过',failed:'命令失败',error:'验证执行错误',timeout:'已确认超时',cancelled:'已取消',interrupted:'资源未知'}[result.outcome]}</strong> · 退出码 {result.exit_code??'未取得'}<br/>{result.version_match==='match'?'验证前后捕获版本一致':'最终版本未被同一验证结果证明'}</p>}
@@ -113,13 +114,14 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
     <details><summary>封存身份与上次重放检查</summary><p className="hint">普通刷新只检查封存对象。接受和下载会重新检查当前漂移并重放。</p><pre>{JSON.stringify({package:context?.package,last_check:context?.last_check},null,2)}</pre></details>
   </section>;
 }
-function RunDetail({ run, onCancel, busy, onChanged }: { run?: Run; onCancel: () => void; busy: boolean; onChanged:(run:Run)=>void }) {
+function RunDetail({ run, onCancel, busy, onChanged, resourcesReady, resourceLock }: { run?: Run; onCancel: () => void; busy: boolean; onChanged:(run:Run)=>void;resourcesReady:boolean;resourceLock:ResourceLock }) {
   const [logs, setLogs] = useState<RunLog[]>([]); const [evidence,setEvidence]=useState<RunEvidence|null>(null); const [error, setError] = useState('');
+  const [facts,setFacts]=useState<unknown>(null),[loaded,setLoaded]=useState(false);
   useEffect(() => {
-    setLogs([]); setEvidence(null); setError(''); if (!run) return;
+    setLogs([]); setEvidence(null); setFacts(null);setLoaded(false);setError(''); if (!run) return;
     let stopped = false; let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
-      try { const [result,proof] = await Promise.all([api<RunLog[]>(`/api/runs/${run.id}/logs`),api<RunEvidence>(`/api/runs/${run.id}/evidence`)]); if (!stopped) { setLogs(result);setEvidence(proof); setError(''); } }
+      try { const [result,proof,history] = await Promise.all([api<RunLog[]>(`/api/runs/${run.id}/logs`),api<RunEvidence>(`/api/runs/${run.id}/evidence`),api<unknown>(`/api/runs/${run.id}/facts`)]); if (!stopped) { setLogs(result);setEvidence(proof);setFacts(history);setLoaded(true);setError(''); } }
       catch (err) { if (!stopped) setError(message(err)); }
       finally { if (!stopped) timer = setTimeout(refresh, 300); }
     };
@@ -130,11 +132,15 @@ function RunDetail({ run, onCancel, busy, onChanged }: { run?: Run; onCancel: ()
     <div className="section-heading"><div><span className="eyebrow">03 / RUN DETAIL</span><h2>运行详情</h2></div><span data-testid="run-state" className={`badge ${run.state}`}>{stateLabel(run)}</span></div>
     <code data-testid="run-id" className="identity">{run.id}</code>
     <p className="hint">execution_mode={run.execution_mode} · 输入版本 v{run.input_snapshot.task.revision}</p>
-    <ol className="phases" aria-label="运行步骤">{(run.execution_mode === 'mock' ? phases : run.input_snapshot.execution?.review_identity?phases:run.input_snapshot.verification ? ['prepare','agent','test'] : ['prepare', 'agent']).map(phase => <li key={phase} className={run.phase === phase ? 'current' : ''}>{phase}</li>)}</ol>
+    <section aria-label="本次冻结目标"><h3>本次目标</h3><p className="frozen-goal" data-testid="frozen-goal">{run.input_snapshot.task.goal}</p><ul className="dod-list">{run.input_snapshot.task.definition_of_done.map((item,index)=><li key={index}>{item}</li>)}</ul></section>
+    <ol className="phases" aria-label="运行步骤">{(run.execution_mode === 'mock' ? phases : run.input_snapshot.execution?.review_identity?phases:run.input_snapshot.verification ? ['prepare','agent','test'] : ['prepare', 'agent']).map(phase => <li key={phase} className={run.phase === phase ? 'current' : ''}>{phaseLabels[phase]}</li>)}</ol>
+    <p data-testid="historical-resource" className="hint">本次历史执行 · {run.execution_mode==='mock'?'mock 没有 OS 资源证据':!loaded?'正在读取执行事实':error?'历史执行事实暂不可更新，旧记录已过期':facts&&typeof facts==='object'&&'resource_state' in facts?facts.resource_state==='safe'?'当时已确认安全':`当时资源状态 ${String(facts.resource_state)}，不代表当前安全`:'未记录资源事实'}</p>
+    <p data-testid="next-step" className="notice">下一步 · {!resourcesReady?'等待本地服务恢复读取，当前资源状态无法确认。':resourceLock?'先检查当前持锁对象与受控进程，保留本次记录。':run.state==='running'?'观察执行，或请求取消并等待停止确认。':run.state==='waiting_review'?'查看冻结目标、变更与验证，再作出人工决定。':run.state==='completed'?'查看历史决定和当前交付完整性，再检查并下载。':run.execution_mode==='mock'?'本次是模拟结果，没有真实交付；可编辑任务后显式发起下一次尝试。':run.state==='interrupted'?'停止事实未知，保留历史并核对受控进程，不要自动重试。':'保留证据，调整任务后显式发起下一次尝试。'}</p>
     {run.state === 'running' && <button type="button" className="danger" onClick={onCancel} disabled={busy}>{run.execution_mode === 'mock' ? '取消 mock Run' : run.input_snapshot.verification ? '请求取消 Run' : '请求取消 Codex'}</button>}
     {run.execution_mode === 'mock' && run.state === 'interrupted' && <p className="warning">服务重启时未完成的 mock 已标为 interrupted，不会自动续跑或补写成功。可保留历史并发起新的尝试。</p>}
     {!['running','waiting_review','completed'].includes(run.state) && <p className="terminal-reason">{run.terminal_reason}<br />{run.execution_mode === 'mock' ? '这不是代码交付或 OS 进程终止证据。' : run.input_snapshot.verification ? '验证仅为命令与捕获版本证据，不代表全部 DoD。Review / Delivery 仍关闭。' : '仅为 Agent 阶段结果；未执行 Verification，尚无 Review 或交付。资源未知时禁止新运行。'}</p>}
     {['waiting_review','completed'].includes(run.state)&&<ReviewPanel key={run.id} run={run} evidence={evidence} onChanged={onChanged}/> }
+    {!['waiting_review','completed'].includes(run.state)&&<p className="hint">{!evidence?.captures.length?'未形成可读取变更证据。 ':''}{!run.input_snapshot.verification?'本次未执行验证。 ':''}尚无人工决定。尚无封存交付物。</p>}
     {run.input_snapshot.verification&&!['waiting_review','completed'].includes(run.state) && <section aria-label="验证证据" className="verification-evidence">
       <h3>本次验证</h3>
       <p className="hint">验证命令只执行一次。以下均为已保存的捕获版本，当前 Workspace 未重新检查。尚无封存 Package 或交付。</p>
@@ -157,7 +163,8 @@ function App() {
   const [verificationChoice,setVerificationChoice]=useState<{taskId:string;revision:number;command:string;timeout:number}|null>(null);
   const [mode, setMode] = useState<'mock' | 'real'>('mock');
   const [capabilities, setCapabilities] = useState<Capabilities>({ real_execution: false, accept:false, codex_profile: { reason: '正在读取当前能力' } });
-  const [resourceLock, setResourceLock] = useState<{run_id: string | null; task_id: string | null} | null>(null);
+  const [resourceLock, setResourceLock] = useState<ResourceLock>(null);
+  const [loaded,setLoaded]=useState(false);
   const [scenario, setScenario] = useState<Scenario>('success');
   const [notice, setNotice] = useState(''); const [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState(''); const [busy, setBusy] = useState(false);
@@ -172,7 +179,7 @@ function App() {
     const refresh = async () => {
       try {
         const [nextTasks, nextRuns, nextLock] = await Promise.all([api<Task[]>('/api/tasks'), api<Run[]>('/api/runs'), api<typeof resourceLock>('/api/resource-lock')]);
-        if (!stopped) { setTasks(nextTasks); setRuns(nextRuns); setResourceLock(nextLock); setConnectionError(''); }
+        if (!stopped) { setTasks(nextTasks); setRuns(nextRuns); setResourceLock(nextLock);setLoaded(true); setConnectionError(''); }
       } catch (err) { if (!stopped) setConnectionError(`暂时无法连接本地服务：${message(err)}。记录保存在本地数据库；服务恢复后将继续读取。`); }
       finally { if (!stopped) timer = setTimeout(refresh, 300); }
     };
@@ -190,9 +197,10 @@ function App() {
   const task = tasks.find(t => t.id === selection.taskId);
   const run = runs.find(r => r.id === selection.runId);
   const active = runs.find(r => r.state === 'running'||r.state==='waiting_review');
+  const resourcesReady=loaded&&!connectionError;
   const taskRuns = task ? runs.filter(r => r.task_id === task.id) : runs;
   async function start() {
-    if (!task) return; setBusy(true); setError(''); setNotice('');
+    if (!task||!resourcesReady||resourceLock||active||busy) return; setBusy(true); setError(''); setNotice('');
     attempt.current ??= { taskId: task.id, scenario, mode, id: crypto.randomUUID(), ...(mode==='real'&&verificationChoice?.taskId===task.id ? {revision:verificationChoice.revision}: {}) };
     const request = attempt.current;
     try {
@@ -217,24 +225,26 @@ function App() {
       {connectionError && <p role="alert" className="error">{connectionError}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <p role="status" className="notice">{notice}</p>}
-      {resourceLock && !active && <p role="alert" className="warning">停止状态尚未确认，资源锁保持。已阻止新运行，请保留历史并检查本地受控进程。没有自动重试或强制解锁。<button type="button" className="link" onClick={() => { const locked = runs.find(r => r.id === resourceLock.run_id); if (locked) navigate(locked.task_id, locked.id); else if (resourceLock.task_id) navigate(resourceLock.task_id); }}>{resourceLock.run_id ? '查看阻塞 Run' : '查看准备中的 Task'}</button></p>}
+      <div data-testid="current-resource" className={!resourcesReady||resourceLock?'warning':'hint'}>{!resourcesReady?'当前资源状态无法确认，暂停新运行。':resourceLock?'当前全局持锁，已阻止新运行。停止状态尚未确认，资源锁保持。请保留历史并检查本地受控进程。':'当前未持锁。'}{resourceLock&&<><span>{!resourcesReady?'上次读取的持锁对象 · ':''}{resourceLock.run_id??resourceLock.task_id??'准备中的请求'}</span><button type="button" className="link" onClick={()=>{const locked=runs.find(r=>r.id===resourceLock.run_id);if(locked)navigate(locked.task_id,locked.id);else if(resourceLock.task_id)navigate(resourceLock.task_id);}}>{resourceLock.run_id?'查看阻塞 Run':'查看准备中的 Task'}</button></>}</div>
+      {!loaded&&<p data-testid="history-loading" role="status">正在读取本地任务与运行历史…</p>}
+      {loaded&&selection.runId&&!run&&<p className="warning">所选 Run 不存在。请从运行历史选择已有记录。</p>}
       {active && <div className="active-strip">全局已有一个活动 Run。<button type="button" className="link" onClick={() => navigate(active.task_id, active.id)}>查看活动运行</button></div>}
-      <div className="workspace">
+      <div className={`workspace ${run?'has-run':''}`}>
         <aside className="panel task-list"><div className="section-heading"><h2>任务</h2><button className="link" type="button" disabled={busy} onClick={() => { attempt.current = null; navigate(''); setNotice(''); }}>＋ 新建 Task</button></div>
-          {tasks.length === 0 ? <p className="empty-note">还没有 Task。<br />从右侧保存一个清晰的工作目标。</p> : tasks.map(t => <button type="button" key={t.id} className={`task-card ${t.id === task?.id ? 'selected' : ''}`} aria-label={`查看 Task ${t.goal}`} onClick={() => { if (!busy) { attempt.current = null; navigate(t.id, runs.find(r => r.task_id === t.id)?.id); } }}><strong>{t.goal}</strong><small>{{ready:'待执行',review:'待审核',done:'已接受交付',blocked:'资源待核对'}[t.state]} · v{t.revision}</small><code>{t.repository_path}</code></button>)}
+          {!loaded ? null : tasks.length === 0 ? <p className="empty-note">还没有 Task。<br />从右侧保存一个清晰的工作目标。</p> : tasks.map(t => <button type="button" key={t.id} className={`task-card ${t.id === task?.id ? 'selected' : ''}`} aria-label={`查看 Task ${t.goal}`} onClick={() => { if (!busy) { attempt.current = null; navigate(t.id, runs.find(r => r.task_id === t.id)?.id); } }}><strong>{t.goal}</strong><small>{{ready:'待执行',review:'待审核',done:'已接受交付',blocked:'资源待核对'}[t.state]} · v{t.revision}</small><code>{t.repository_path}</code></button>)}
           <div className="closed-capabilities"><h3>能力范围</h3><p>{!capabilities.real_execution && <>真实 Agent 执行未开放<br /></>}{capabilities.accept?'封存审核 / 交付已开放':'Accept / Accepted Delivery 关闭'}</p><small>{capabilities.real_execution ? capabilities.accept?'G1 / G2 限当前 profile':'G1 限当前 profile · G2 关闭' : 'G1 / G2 未开放'}<br />原 Product / Technical Gate 不变</small></div>
         </aside>
-        <div className="panel task-panel"><TaskForm key={task?.id ?? 'new'} task={task} onSaved={saved => { setTasks(old => [saved, ...old.filter(t => t.id !== saved.id)]); if (saved.id !== task?.id) navigate(saved.id); setNotice('Task 已保存'); }} />
+        <div className="panel task-panel"><details className="task-editor" open={run?undefined:true}><summary>{run?'编辑下一次运行的任务输入':'任务输入'}</summary><TaskForm key={task?.id ?? 'new'} task={task} onSaved={saved => { setTasks(old => [saved, ...old.filter(t => t.id !== saved.id)]); if (saved.id !== task?.id) navigate(saved.id); setNotice('Task 已保存'); }} /></details>
           {task && <section className="run-control"><span className="eyebrow">02 / RUN</span><h2>{mode === 'mock' ? '发起一次模拟' : '交给 Codex 执行'}</h2><code className="identity">{task.id}</code><p className="task-state">{{ready:'ready · 待执行',review:'review · 等待审核本次结果',done:'done · 已接受可重放交付物',blocked:'blocked · 已拒绝结果，资源仍待核对'}[task.state]}</p>
             <label htmlFor="execution-mode">执行方式</label><select id="execution-mode" value={mode} disabled={busy || !!attempt.current} onChange={e => setMode(e.target.value as 'mock' | 'real')}><option value="mock">模拟 · 不读取仓库</option><option value="real" disabled={!capabilities.real_execution}>Codex · 当前 Windows profile</option></select>
             {mode === 'mock' && <><label htmlFor="scenario">模拟场景</label><select id="scenario" value={scenario} disabled={busy || !!attempt.current} onChange={e => setScenario(e.target.value as Scenario)}><option value="success">成功 · 固定模拟步骤</option><option value="failure">失败 · 模拟 Agent 阶段失败</option><option value="cancel">取消 · 固定模拟取消</option></select></>}
             {mode==='real' && <div className="verification-choice"><label><input type="checkbox" checked={verificationChoice?.taskId===task.id} disabled={busy||!!attempt.current} onChange={e=>setVerificationChoice(e.target.checked?{taskId:task.id,revision:task.revision,command:task.verification_draft.command,timeout:task.verification_draft.timeout_seconds}:null)} /> 本次执行验证</label><p className="hint">明确选择后，Agent 成功且安全退出才运行下面已保存的命令。表单中未保存的编辑不参与本次运行。</p><pre>{verificationChoice?.taskId===task.id ? verificationChoice.command : task.verification_draft.command}</pre><p className="hint">Task v{verificationChoice?.taskId===task.id?verificationChoice.revision:task.revision} · {verificationChoice?.taskId===task.id?verificationChoice.timeout:task.verification_draft.timeout_seconds} 秒 · Windows PowerShell · 独立工作副本</p></div>}
-            <button type="button" className="primary full" disabled={busy || !!active || !!resourceLock || (mode === 'real' && !capabilities.real_execution)} onClick={() => void start()}>{busy ? '操作中…' : mode === 'mock' ? '启动 mock Run' : '启动 Codex Run'}</button><p className="hint">{mode === 'mock' ? '每次新尝试单独保存。取消只停止模拟，不代表 OS 进程树终止。' : 'trusted-local，保留 Codex 原生权限限制。只支持干净的普通 Git 仓库；独立工作副本，Agent 最长 3 分钟，验证使用所选超时。取消需等待停止和输出收尾确认。'}</p>
+            <button type="button" className="primary full" disabled={busy || !resourcesReady || !!active || !!resourceLock || (mode === 'real' && !capabilities.real_execution)} onClick={() => void start()}>{busy ? '操作中…' : mode === 'mock' ? '启动 mock Run' : '启动 Codex Run'}</button><p className="hint">{mode === 'mock' ? '每次新尝试单独保存。取消只停止模拟，不代表 OS 进程树终止。' : 'trusted-local，保留 Codex 原生权限限制。只支持干净的普通 Git 仓库；独立工作副本，Agent 最长 3 分钟，验证使用所选超时。取消需等待停止和输出收尾确认。'}</p>
           </section>}
         </div>
-        <div className="panel run-panel"><RunDetail run={run} onCancel={() => void cancel()} busy={busy} onChanged={changed=>setRuns(old=>old.map(item=>item.id===changed.id?changed:item))} />
+        <div className="panel run-panel"><RunDetail key={run?.id??'empty'} resourcesReady={resourcesReady} resourceLock={resourceLock} run={run} onCancel={() => void cancel()} busy={busy} onChanged={changed=>setRuns(old=>old.map(item=>item.id===changed.id?changed:item))} />
           <section className="history"><div className="section-heading"><h2>运行历史</h2><span className="hint">{taskRuns.length} 次尝试</span></div>
-            {taskRuns.length === 0 ? <p className="empty-note">尚无运行记录。模拟结束也不会把 Task 标记为 done。</p> : taskRuns.map(r => <button type="button" className={`history-item ${r.id === run?.id ? 'selected' : ''}`} key={r.id} onClick={() => navigate(r.task_id, r.id)}><span><strong>{stateLabel(r)}</strong><small>{new Date(r.created_at).toLocaleString('zh-CN')} · {r.execution_mode === 'mock' ? r.scenario : r.input_snapshot.verification ? 'Codex · 单次验证' : 'Codex · Agent 阶段'}</small><code>{r.id}</code></span><span className="badge mock">{r.execution_mode}</span></button>)}
+            {!loaded ? <p className="empty-note">正在读取运行历史…</p> : taskRuns.length === 0 ? <p className="empty-note">尚无运行记录。模拟结束也不会把 Task 标记为 done。</p> : taskRuns.map(r => <button type="button" className={`history-item ${r.id === run?.id ? 'selected' : ''}`} key={r.id} onClick={() => navigate(r.task_id, r.id)}><span><strong>{stateLabel(r)}</strong><small>{new Date(r.created_at).toLocaleString('zh-CN')} · {r.execution_mode === 'mock' ? r.scenario : r.input_snapshot.verification ? 'Codex · 单次验证' : 'Codex · Agent 阶段'}</small><code>{r.id}</code></span><span className="badge mock">{r.execution_mode}</span></button>)}
           </section>
         </div>
       </div>

@@ -46,6 +46,7 @@ test('create Task → mock logs → close page → restart service → persisted
     await expect(page.getByTestId('run-state')).toHaveText('模拟成功');
     await expect(page.getByText('ready · 待执行', { exact: true })).toBeVisible();
     // Existing Run snapshot must not follow a Task edit from the actual UI.
+    await page.getByText('编辑下一次运行的任务输入', { exact: true }).click();
     await page.getByLabel('目标', { exact: true }).fill('Edited after snapshot');
     await page.getByRole('button', { name: '保存 Task 修改' }).click();
     await expect(page.getByText('v2', { exact: true })).toBeVisible();

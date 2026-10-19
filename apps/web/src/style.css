@@ -609,3 +609,30 @@ footer {
 .review-actions {display:flex;gap:10px;flex-wrap:wrap;margin-top:22px;}
 .review-decision {border-top:1px solid #dfe6e2;margin-top:22px;padding-top:18px;}
 .review-panel details {margin-top:8px;}
+.workspace.has-run {grid-template-columns:190px minmax(230px,.65fr) minmax(0,1.65fr);}
+.task-editor {margin-top:0;}
+.has-run .task-editor summary {font-weight:650;color:#377660;}
+.has-run .run-control {margin-top:16px;padding-top:16px;}
+.intro {margin-bottom:16px;}
+h1 {font-size:25px;margin:6px 0;}
+main {padding-top:22px;}
+.mode-banner {padding:10px 14px;margin-bottom:14px;}
+.panel,.section-heading>div,.history-item>span,.logs p,.logs span,.brand {min-width:0;}
+.panel p,.panel li,.panel code,[data-testid=current-resource] {overflow-wrap:anywhere;}
+.history-item {gap:8px;}
+@media(max-width:900px) {
+  .workspace.has-run {grid-template-columns:minmax(0,.65fr) minmax(0,1.35fr);}
+}
+@media(max-width:640px) {
+  .workspace.has-run {display:flex;flex-direction:column;gap:0;}
+  .has-run .panel {width:100%;}
+  .has-run .task-list {order:0;}
+  .has-run .run-panel {order:1;}
+  .has-run .task-panel {order:2;}
+  header {gap:8px;}
+  .brand {gap:8px;}
+  .brand-mark {flex-shrink:0;}
+  .local {font-size:10px;}
+  .phases {gap:3px;}
+  .phases li {padding:6px 2px;}
+}
