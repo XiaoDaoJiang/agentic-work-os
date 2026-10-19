@@ -240,3 +240,23 @@ test('UI injection: initial facts or evidence failure reports uncertainty instea
   }
  }finally{await page.close();await service.stop();}
 });
+
+
+test('UI injection: confirmed timeout explains agent and capture failure without claiming verification ran',async({page})=>{
+ const {service,state}=await fixture(page);
+ state.runs=[{...runs[0],execution_mode:'real',state:'failed',phase:'agent',terminal_reason:'agent_not_successful'}];
+ state.facts={resource_state:'safe',trigger:'timeout',stdout_drained:true,stderr_drained:true};
+ try{
+  await page.goto(`${service.origin}/#task=${task.id}&run=run-first`);
+  await expect(page.getByTestId('execution-timeout')).toHaveText('Agent 执行超时，未进入后续验证或审核。');
+  state.runs=[{...state.runs[0],phase:'test',terminal_reason:'initial_capture_error'}];
+  await expect(page.getByTestId('execution-timeout')).toHaveText('验证前版本捕获超时，未启动验证命令。');
+  state.detailFailure='facts';
+  await expect(page.getByTestId('historical-resource')).toContainText('无法确认');
+  await expect(page.getByTestId('execution-timeout')).toHaveCount(0);
+  state.detailFailure='';state.facts={resource_state:'safe',trigger:'natural'};
+  await expect(page.getByTestId('historical-resource')).toContainText('当时已确认安全');
+  await expect(page.getByTestId('execution-timeout')).toHaveCount(0);
+  expect(state.writes).toBe(0);
+ }finally{await page.close();await service.stop();}
+});
