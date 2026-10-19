@@ -2,9 +2,9 @@
 
 项目原生的人机协同工作控制面：组织目标、调用本地 Coding Agent、审核交付物，并保留可恢复的工作历史。
 
-## 当前阶段：FMVP-04 已通过限定 Windows profile 验收
+## 当前阶段：FMVP-05 已通过限定 Windows profile 验收
 
-本地实现栈已完成 FMVP-01 至 FMVP-04，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
+本地实现栈已完成 FMVP-01 至 FMVP-05，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
 
 已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
 
@@ -63,7 +63,7 @@ Playwright 1.52在Node 24的ESM loader会挂起；现有入口仅为纯.mjs测�
 
 ## 下一项
 
-[FMVP-05](docs/pm/70-mvp-wwa-backlog.md)整合重开后的冻结目标、资源事实、异常与下一步，并完成UI统一回归。之后通过应用处理发起者已提供的Power Tool真实任务；当前尚未取得Founder闭环，不用演示fixture替代。
+[FMVP-05](docs/mvp/05-fmvp-05-implementation.md)已完成重开后的冻结目标、资源事实、异常与下一步、键盘和窄屏回归。下一项通过应用处理发起者已提供的Power Tool真实任务；当前尚未取得Founder闭环，不用演示fixture替代。
 
 | 入口 | 内容 |
 |---|---|
