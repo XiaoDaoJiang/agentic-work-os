@@ -14,7 +14,7 @@
 | FMVP-03 | 单一 Verification 与版本明确的结果查看 | DONE（当前 Windows profile） | [实施与证据](../mvp/03-fmvp-03-implementation.md)；18 项 G1、真实链路与浏览器通过，逐次明确选择验证 |
 | FMVP-04 | 不可变交付物与 Human Review | DONE（限定已验收Windows profile） | [实际验收](../mvp/04-fmvp-04-implementation.md)；当前G1/G2同时匹配才开放Accept/Delivery |
 | FMVP-05 | 重开恢复、异常阻塞与历史解释 | DONE（限定已验收Windows profile） | [实际验收](../mvp/05-fmvp-05-implementation.md)；18项UI回归及真实执行、审核、恢复、损坏回归通过 |
-| FMVP-06 | Founder 真实任务使用与摩擦修正 | PLANNED | 真实使用依赖已开放能力；不等待外部人数 |
+| FMVP-06 | Founder 真实任务使用与摩擦修正 | IN_PROGRESS（兼容前置） | [实施计划](../mvp/06-fmvp-06-implementation.md)；当前尚未启动Power Tool真实Run，须先取得修改后匹配G1/G2 |
 
 ## FMVP-01 — 可持久化 Task + mock Run 控制面
 
