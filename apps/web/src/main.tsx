@@ -5,11 +5,18 @@ import { ApiError, parseTaskInput, type Task, type TaskInput, type Run, type Run
 import './style.css';
 
 let sessionToken = '';
+type Capabilities = { real_execution: boolean; accept: boolean; codex_profile: { reason: string } };
+let sessionRequest: Promise<Capabilities & { session_token: string }> | null = null;
+function readSession() {
+  sessionRequest ??= api<Capabilities & { session_token: string }>('/api/session')
+    .then(session => { sessionToken = session.session_token; return session; })
+    .finally(() => { sessionRequest = null; });
+  return sessionRequest;
+}
 async function api<T>(path: string, method = 'GET', value?: unknown): Promise<T> {
-  if (method !== 'GET' && !sessionToken) {
-    const session = await api<{ session_token: string }>('/api/session'); sessionToken = session.session_token;
-  }
+  if (method !== 'GET' && !sessionToken) await readSession();
   const response = await fetch(path, { method, cache: 'no-store',
+    ...(['/api/session', '/api/capabilities'].includes(path) ? { signal: AbortSignal.timeout(10000) } : {}),
     headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-WorkOS-Session': sessionToken },
     ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
   const data = await response.json();
@@ -77,7 +84,7 @@ function ReviewPanel({run,evidence,onChanged}:{run:Run;evidence:RunEvidence|null
   }
   async function download() {
     setBusy(true);setError('');
-    try {if(!sessionToken)sessionToken=(await api<{session_token:string}>('/api/session')).session_token;
+    try {if(!sessionToken)await readSession();
       const response=await fetch(`/api/runs/${run.id}/delivery`,{method:'POST',headers:{'Content-Type':'application/json','X-WorkOS-Session':sessionToken},body:'{}'});
       if(!response.ok){const failure=await response.json();if(failure.code==='LOCAL_SESSION_REQUIRED')sessionToken='';throw new Error(failure.message);}
       const href=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=href;link.download=`${context?.package?.id??run.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(href),1000);setContext(await api<ReviewContext>(`/api/runs/${run.id}/review`));
@@ -149,7 +156,7 @@ function App() {
   const [selection, setSelection] = useState(readLocation);
   const [verificationChoice,setVerificationChoice]=useState<{taskId:string;revision:number;command:string;timeout:number}|null>(null);
   const [mode, setMode] = useState<'mock' | 'real'>('mock');
-  const [capabilities, setCapabilities] = useState<{ real_execution: boolean; accept:boolean; codex_profile: { reason: string } }>({ real_execution: false, accept:false, codex_profile: { reason: '正在读取当前能力' } });
+  const [capabilities, setCapabilities] = useState<Capabilities>({ real_execution: false, accept:false, codex_profile: { reason: '正在读取当前能力' } });
   const [resourceLock, setResourceLock] = useState<{run_id: string | null; task_id: string | null} | null>(null);
   const [scenario, setScenario] = useState<Scenario>('success');
   const [notice, setNotice] = useState(''); const [error, setError] = useState('');
@@ -164,12 +171,21 @@ function App() {
     let stopped = false; let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
       try {
-        const [nextTasks, nextRuns, nextCapabilities, nextLock] = await Promise.all([api<Task[]>('/api/tasks'), api<Run[]>('/api/runs'), api<typeof capabilities>('/api/capabilities'), api<typeof resourceLock>('/api/resource-lock')]);
-        if (!stopped) { setTasks(nextTasks); setRuns(nextRuns); setCapabilities(nextCapabilities); setResourceLock(nextLock); setConnectionError(''); }
+        const [nextTasks, nextRuns, nextLock] = await Promise.all([api<Task[]>('/api/tasks'), api<Run[]>('/api/runs'), api<typeof resourceLock>('/api/resource-lock')]);
+        if (!stopped) { setTasks(nextTasks); setRuns(nextRuns); setResourceLock(nextLock); setConnectionError(''); }
       } catch (err) { if (!stopped) setConnectionError(`暂时无法连接本地服务：${message(err)}。记录保存在本地数据库；服务恢复后将继续读取。`); }
       finally { if (!stopped) timer = setTimeout(refresh, 300); }
     };
     void refresh(); return () => { stopped = true; clearTimeout(timer); window.removeEventListener('hashchange', onHash); };
+  }, []);
+  useEffect(() => {
+    let stopped = false; let timer: ReturnType<typeof setTimeout>;
+    const refresh = async (initial = false) => {
+      try { const next = await (initial ? readSession() : api<Capabilities>('/api/capabilities')); if (!stopped) setCapabilities(next); }
+      catch (err) { if (!stopped) setCapabilities({ real_execution: false, accept: false, codex_profile: { reason: `当前能力暂不可用：${message(err)}。稍后重新读取。` } }); }
+      finally { if (!stopped) timer = setTimeout(() => void refresh(), 30000); }
+    };
+    void refresh(true); return () => { stopped = true; clearTimeout(timer); };
   }, []);
   const task = tasks.find(t => t.id === selection.taskId);
   const run = runs.find(r => r.id === selection.runId);
