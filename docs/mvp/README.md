@@ -1,9 +1,10 @@
 # Founder MVP — 开工入口
 
-> 更新：2026-10-19
+> 更新：2026-10-30
 > 授权：FOUNDER_MVP_DEVELOPMENT_ALLOWED  
 > 实现状态：FMVP-01 至 FMVP-06 DONE，限定已验收 Windows 本机 profile
 > 后续：人工审核本次真实候选，再由下一项真实工作决定迭代；真实 Accept / Delivery 仅当前 G1/G2 同时匹配时开放
+> 执行栈：已迁移 AI SDK + Codex App Server；新 profile 的验收、启动与旧候选只读边界见[迁移记录](./07-ai-sdk-migration.md)。
 
 ## 最少阅读
 

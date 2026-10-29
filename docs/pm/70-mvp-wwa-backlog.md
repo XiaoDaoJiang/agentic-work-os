@@ -4,6 +4,7 @@
 > 开工依据：[FMVP-ADR-001](../mvp/00-founder-mvp-scope.md)  
 > 方法：仓库内 `.agents/skills/wwas/SKILL.md` 的 Why / What / Acceptance  
 > 更新：2026-10-19。FMVP-01 至 FMVP-06 已按本切片边界完成Windows本机实现与验收；真实任务waiting_review，尚无人类接受或独立复用。不是原联合 Gate PASS
+> 执行层维护：2026-10-30 迁移 AI SDK + Codex App Server，新 profile 单独验证 G1/G2；六切片历史结论和原 Gate 不改写，见[迁移记录](../mvp/07-ai-sdk-migration.md)。
 
 当前以六个可交付切片推进。切片可以在 mock 边界上独立编写测试/界面，但真实端到端能力存在明确依赖；不为了声称完全独立而隐藏依赖。
 

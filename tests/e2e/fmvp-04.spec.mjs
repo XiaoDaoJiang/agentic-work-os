@@ -8,7 +8,7 @@ import {startTestService} from '../../tools/test-service.mjs';
 import {fixtureCheckBudget,fixtureLimits} from '../../tools/verify-verification.mjs';
 import {agentTimeoutMs} from '../../apps/server/dist/contracts.js';
 
-// Two 10s reads on reopen need room for rendering and observation.
+// Reopen and an accepted Run state change each trigger fresh 10s reads.
 const reopenedDetailBudget=22000;
 
 // Real Agent budget, two captures, the 60s verification draft, seal replay,
@@ -40,13 +40,13 @@ test('sealed review survives restart, accepts one package and downloads after Wo
   for(const name of ['封存验证 stdout','封存验证 stderr'])await review.locator('summary').filter({hasText:name}).click();await expect(review).toContainText('review stdout');await expect(review).toContainText('review stderr');await page.screenshot({path:info.outputPath('waiting-review.png'),fullPage:true});
   const workspace=run.input_snapshot.execution.workspace_path,within=relative(directory,workspace);expect(within.startsWith('..')||isAbsolute(within)).toBe(false);rmSync(workspace,{recursive:true});
   const accepting=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===`/api/runs/${runId}/review`,{timeout:fixtureCheckBudget});
-  await page.getByRole('button',{name:'接受交付物',exact:true}).click();expect([200,201]).toContain((await accepting).status());await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物');await expect(page.getByText('done · 已接受可重放交付物',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'接受交付物',exact:true}).click();expect([200,201]).toContain((await accepting).status());const acceptedResponseAt=Date.now();await expect(page.getByTestId('review-decision')).toHaveText('已接受交付物',{timeout:reopenedDetailBudget});await info.attach('accept-refresh-duration',{body:JSON.stringify({milliseconds:Date.now()-acceptedResponseAt}),contentType:'application/json'});await expect(page.getByText('done · 已接受可重放交付物',{exact:true})).toBeVisible();
   const offline=join(directory,'source-offline');
   const assertOwned=target=>{const within=relative(resolve(directory),resolve(target));expect(Boolean(within)&&!within.startsWith('..')&&!isAbsolute(within)).toBe(true);};
   assertOwned(source);assertOwned(offline);renameSync(source,offline);
   try{
    const failedCheck=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===`/api/runs/${runId}/delivery`,{timeout:fixtureCheckBudget});
-   await page.getByRole('button',{name:'检查并下载交付物',exact:true}).click();expect((await failedCheck).status()).toBe(409);await expect(review.getByRole('alert')).toContainText('本次交付检查未通过');
+   await page.getByRole('button',{name:'检查并下载交付物',exact:true}).click();expect((await failedCheck).status()).toBe(409);await expect(review.getByRole('alert').filter({hasText:'本次交付检查未通过'})).toBeVisible();
    await page.reload();await expect(page.getByTestId('delivery-integrity')).toContainText('当前封存对象完整',{timeout:reopenedDetailBudget});await expect(page.getByRole('button',{name:'检查并下载交付物',exact:true})).toBeEnabled();await expect(review).toContainText('上次检查存在漂移或无法确认');
   }finally{assertOwned(offline);assertOwned(source);renameSync(offline,source);}
   const downloadPromise=page.waitForEvent('download',{timeout:fixtureCheckBudget});void downloadPromise.catch(()=>{});

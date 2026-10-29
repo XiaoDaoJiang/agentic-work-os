@@ -4,7 +4,7 @@
 
 ## 当前阶段：Founder MVP 六个切片已完成限定 Windows 验收
 
-本地实现栈已完成 FMVP-01 至 FMVP-06，目标基线为 `mvp/founder-foundation`。2026-10-19 在 Windows x64 / Node 24.16.0 完成当前执行身份的G1/G2与真实浏览器验收。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
+本地实现栈已完成 FMVP-01 至 FMVP-06，目标基线为 `mvp/founder-foundation`。2026-10-30 执行层迁移到 AI SDK + Codex App Server，当前 Windows profile 的新 G1/G2 已通过，详见[迁移记录](docs/mvp/07-ai-sdk-migration.md)。真实 Codex 与单次 Verification 仅在本机 G1 记录匹配时开放；审核与交付还要求匹配G2，默认仍为mock。这不是原 Product / Technical Gate PASS，也不表示已合并到基线或 main。
 
 已支持 Task 创建/编辑、独立 Run 输入快照、模拟日志、成功/失败/取消、本地持久化和重开恢复。进行中的 mock 在服务重启后标为 interrupted，不自动续跑或补写成功。
 
@@ -26,8 +26,8 @@ npm run dev
 本机已验收 profile 可显式启用真实执行：
 
 ```powershell
-$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-04/workos-g1-Pj3rSt/g1.json).Path
-$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/fmvp-06/g2-7ae2ba7-20261019/g2.json).Path
+$env:WORKOS_G1_EVIDENCE = (Resolve-Path verification-output/fmvp-04/workos-g1-WyREl3/g1.json).Path
+$env:WORKOS_G2_EVIDENCE = (Resolve-Path verification-output/ai-sdk-migration/g2-3931a6e/g2.json).Path
 npm start
 ```
 
