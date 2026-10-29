@@ -12,12 +12,13 @@ async function main() {
   if (!input || Object.keys(input).sort().join(',') !== 'cwd,executable,model,prompt') throw new Error('Invalid driver input');
   codexInvocation(input.cwd, input.prompt, input.model, input.executable);
   let protocolWarning = false;
+  const rejectProtocol = () => { protocolWarning = true; process.exitCode = 1; };
   const provider = createCodexAppServer({ defaultSettings: {
     codexPath: input.executable, cwd: input.cwd, threadMode: 'stateless',
     approvalPolicy: 'never', sandboxPolicy: 'workspace-write', autoApprove: false,
     configOverrides: { model_provider: 'openai', notify: [], 'windows.sandbox': 'elevated', 'features.unified_exec': false, 'features.apps': false, 'features.hooks': false, 'features.plugins': false },
     connectionTimeoutMs: 15000, requestTimeoutMs: 30000,
-    logger: { debug() {}, info() {}, warn() { protocolWarning = true; }, error() { protocolWarning = true; } },
+    logger: { debug() {}, info() {}, warn: rejectProtocol, error: rejectProtocol },
   } });
   let completed = false;
   try {

@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { appendFileSync, writeFileSync, existsSync } from 'node:fs';
-const send = value => process.stdout.write(JSON.stringify(value) + '\n');
+const send = (value, callback) => process.stdout.write(JSON.stringify(value) + '\n', callback);
 const record = value => appendFileSync('rpc.jsonl', JSON.stringify(value) + '\n');
 record({ argv: process.argv.slice(2), pid: process.pid });
 let model;
@@ -28,6 +28,15 @@ async function closeAfterEof() {
 const turn = status => ({ id: 'turn-fixture', status, items: [], error: null });
 const command = status => ({ id: 'command', type: 'commandExecution', command: 'fixture-only', cwd: process.cwd(), processId: null, status, commandActions: [], aggregatedOutput: '', exitCode: null, durationMs: null });
 const finish = () => {
+  if (model === 'late-crash') {
+    send({ method: 'item/agentMessage/delta', params: { threadId: 'thread-fixture', turnId: 'turn-fixture', itemId: 'message', delta: 'x'.repeat(512 * 1024) } });
+    return send({ method: 'turn/completed', params: { threadId: 'thread-fixture', turn: turn('completed') } }, () => {
+      setTimeout(() => {
+        writeFileSync('exiting.json', JSON.stringify({ pid: process.pid, code: 7 }));
+        process.exit(7);
+      }, 30);
+    });
+  }
   if (model === 'malformed') process.stdout.write('not-json\n');
   if (model === 'invalid-notification') send({ method: 'item/completed', params: { broken: true } });
   if (model === 'approval') send({ method: 'item/completed', params: { threadId: 'thread-fixture', turnId: 'turn-fixture', item: command('declined') } });

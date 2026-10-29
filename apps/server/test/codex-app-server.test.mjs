@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +63,34 @@ test('invalid effective config prevents thread and turn creation', () => {
   assert.ok(!rpc.some(message => ['thread/start', 'turn/start'].includes(message.method)));
   assert.equal(readFileSync(path.join(cwd, 'closed.txt'), 'utf8'), 'stdin-drained');
   assert.throws(() => process.kill(rpc[0].pid, 0), { code: 'ESRCH' });
+});
+
+test('AppServer nonzero exit after completed message cannot succeed under stdout backpressure', async t => {
+  const cwd = mkdtempSync(path.join(tmpdir(), 'workos-sdk-late-crash-'));
+  const invocation = codexInvocation(cwd, 'fixture', 'late-crash', fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url)));
+  const child = spawn(invocation.program, invocation.argv, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '', stderr = '';
+  child.stderr.on('data', data => { stderr += data; });
+  const closed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code)); });
+  const timeout = setTimeout(() => child.kill(), 15000);
+  t.after(() => { clearTimeout(timeout); if (child.exitCode === null && child.signalCode === null) child.kill(); });
+  const deadline = Date.now() + 10000;
+  const marker = path.join(cwd, 'exiting.json');
+  while (!existsSync(marker) && Date.now() < deadline) await delay(5);
+  assert.ok(existsSync(marker), 'AppServer must flush completed before exiting');
+  const exiting = JSON.parse(readFileSync(marker, 'utf8'));
+  assert.equal(exiting.code, 7);
+  let alive = true;
+  while (alive && Date.now() < deadline) {
+    try { process.kill(exiting.pid, 0); await delay(5); }
+    catch (error) { assert.equal(error.code, 'ESRCH'); alive = false; }
+  }
+  assert.equal(alive, false);
+  await delay(20);
+  child.stdout.on('data', data => { stdout += data; });
+  const code = await closed;
+  assert.ok(stdout.split('\n').filter(Boolean).map(JSON.parse).some(event => event.type === 'turn.started'));
+  assert.equal(code, 1, 'nonzero AppServer exit must override completed turn success: ' + stderr);
 });
 for (const model of ['unsafe-policy', 'active-mcp']) test(model + ' prevents a model turn', () => {
   const cwd = mkdtempSync(path.join(tmpdir(), 'workos-sdk-unit-'));
