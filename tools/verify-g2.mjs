@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,realpathSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir,release} from 'node:os';
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -80,7 +80,7 @@ export async function verifyG2({helper,evidence,g1EvidencePath}) {
  const metadata=g1?JSON.parse(readFileSync(g1.evidence_path,'utf8')):{};
  const gitVersion=spawnSync('git',['--version'],{encoding:'utf8',windowsHide:true,timeout:5000});assert.equal(gitVersion.status,0);
  const code=spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8',windowsHide:true,timeout:5000});assert.equal(code.status,0);
- const manifest={code_sha:code.stdout.trim(),git_version:gitVersion.stdout.trim(),codex_version:g1?.codex_version??'fixture',g1_evidence_path:g1?.evidence_path??null,g1_code_sha:metadata.code_sha??null,schema:'fmvp-g2-v1',activation:g1?'passed':'diagnostic_only',source_identity:initialIdentity,platform:'win32/x64',node:process.version,os_release:release(),model:g1?.model??'fixture',executable_sha256:g1?sha256File(g1.executable):null,helper_sha256:sha256File(helper),verification_shell_sha256:sha256File(verificationShell()),cases,root};
+ const manifest={code_sha:code.stdout.trim(),git_version:gitVersion.stdout.trim(),codex_version:g1?.codex_version??'fixture',g1_evidence_path:g1?.evidence_path??null,g1_code_sha:metadata.code_sha??null,schema:'fmvp-g2-v1',activation:g1?'passed':'diagnostic_only',source_identity:initialIdentity,platform:'win32/x64',node:process.version,node_executable:realpathSync(process.execPath),node_executable_sha256:sha256File(process.execPath),os_release:release(),model:g1?.model??'fixture',executable_sha256:g1?sha256File(g1.executable):null,helper_sha256:sha256File(helper),verification_shell_sha256:sha256File(verificationShell()),cases,root};
  writeFileSync(join(evidence,'g2.json'),JSON.stringify(manifest,null,2));return manifest;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {

@@ -11,7 +11,7 @@ import { computeDeliveryIntegrity } from '../../../experiments/milestone-0/src/d
 import { ensureRepositoryMarker } from '../../../experiments/milestone-0/src/repository-marker.mjs';
 import { ApiError, agentTimeoutMs, type Run, type RealSnapshot, type ExecutionStage, type VerificationSelection, type VerificationResult, type CapturedVersion, type Artifact, type ReviewRequest, type ResourceCheck, type ReviewContext } from './contracts.js';
 import { Store } from './store.js';
-import { codexInvocation } from './codex-adapter.js';
+import { codexInvocation, codexProfile } from './codex-adapter.js';
 import { sourceRoot, sha256File, type ExecutionProfile } from './execution-profile.js';
 import { freezeVerification, verificationArgv, verificationEnvironment } from './verification.js';
 type BoundaryResult = { safe: true; terminal: Record<string, unknown> } | {safe: false; terminal: Record<string, unknown>};
@@ -114,13 +114,14 @@ export class RealExecutor {
                 throw new ApiError(503, 'CLOSING', '服务关闭期间不再启动执行');
             const directory = join(this.directory, randomUUID());
             mkdirSync(directory, { recursive: true });
-            const execution: RealSnapshot = { profile_id: 'windows-processkit-codex-exec', model: this.profile!.model, base_revision: source.head,
+            const execution: RealSnapshot = { profile_id: codexProfile.id, model: this.profile!.model, base_revision: source.head,
                 repository_identity: repository.repositoryIdentity, source_path: source.canonical, workspace_path: join(directory, 'workspace'),
                 receipt_path: join(directory, 'receipt.json'), runtime_id: randomUUID(), spawn_nonce: randomUUID(), timeout_ms: agentTimeoutMs,
                 executable: this.profile!.executable, codex_version: this.profile!.codex_version, helper_revision: this.profile!.helper_revision, ...(verification&&this.reviewGate()?{review_identity:this.reviewGate()!}:{}) };
-            const invocation = codexInvocation(execution.workspace_path, this.prompt(task), execution.model);
+            const invocation = codexInvocation(execution.workspace_path, this.prompt(task), execution.model, this.profile!.executable);
             if (Buffer.byteLength(JSON.stringify(invocation.argv)) > 50000)
                 throw new ApiError(400, 'INPUT_TOO_LARGE', '当前执行输入超出原生请求大小限制');
+            execution.driver_program = invocation.program;
             execution.argv = invocation.argv;
             execution.environment_names = invocation.inheritNames;
             const result = this.store.startRealRun(taskId, requestId, execution, task.revision, selection, verification);
@@ -167,8 +168,8 @@ export class RealExecutor {
     }
     private async execute(run: Run) {
         const x=run.input_snapshot.execution!;
-        const agent=codexInvocation(x.workspace_path,this.prompt(run.input_snapshot.task),x.model);
-        let last=await this.executeBoundary(run,{stage:'agent',program:this.profile!.executable,argv:agent.argv,timeout:x.timeout_ms,names:agent.inheritNames});
+        const agent=codexInvocation(x.workspace_path,this.prompt(run.input_snapshot.task),x.model,x.executable ?? this.profile!.executable);
+        let last=await this.executeBoundary(run,{stage:'agent',program:x.driver_program ?? agent.program,argv:x.argv ?? agent.argv,timeout:x.timeout_ms,names:x.environment_names ?? agent.inheritNames});
         if(!run.input_snapshot.verification) {
             let safe=last.safe, drift=false;
             try {assertBaseline(x.source_path,x.base_revision); drift=git(x.workspace_path,['rev-parse','HEAD'])!==x.base_revision;}

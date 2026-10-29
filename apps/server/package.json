@@ -1,1 +1,1 @@
-{ "name": "@workos/server", "version": "0.1.0", "private": true, "type": "module" }
+{"name":"@workos/server","version":"0.1.0","private":true,"type":"module","dependencies":{"ai":"7.0.157","ai-sdk-provider-codex-cli":"2.3.0","zod":"4.6.7"}}

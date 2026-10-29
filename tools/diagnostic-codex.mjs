@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codexInvocation, resolveCodexExecutable } from '../apps/server/dist/codex-adapter.js';
+import { codexInvocation, codexProfile, resolveCodexExecutable } from '../apps/server/dist/codex-adapter.js';
 import { ensureRepositoryMarker } from '../experiments/milestone-0/src/repository-marker.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -36,7 +36,7 @@ async function run(name, program, argv, timeout, cancel, ownerLoss = false, expe
   const id = randomUUID();
   const request = path.join(directory, `${name}.request.json`);
   writeFileSync(request, JSON.stringify({
-    start: { kind: 'start', protocol: 'local-runner-jsonl-v0', request_id: `start-${id}`, run_id: id, program, argv, cwd: fixture, env: { inheritance_policy: 'allowlist', inherit_names: codexInvocation(fixture, 'fixture', 'self-test-no-model-execution').inheritNames, overrides: {}, unset: [] }, timeout_ms: timeout },
+    start: { kind: 'start', protocol: 'local-runner-jsonl-v0', request_id: `start-${id}`, run_id: id, program, argv, cwd: fixture, env: { inheritance_policy: 'allowlist', inherit_names: codexInvocation(fixture, 'fixture', 'self-test-no-model-execution', process.execPath).inheritNames, overrides: {}, unset: [] }, timeout_ms: timeout },
     runtime_id: randomUUID(), spawn_nonce: randomUUID(), repository_identity: repository.repositoryIdentity,
     base_revision: revision, helper_revision: `${codeHead}+working-tree`, receipt_path: path.join(directory, `${name}.receipt.json`),
   }));
@@ -101,15 +101,15 @@ if (scenario === 'self-test') {
   await run('backpressure', process.execPath, ['-e', 'setInterval(()=>{process.stdout.write("x".repeat(65536));process.stderr.write("y".repeat(65536))},1)'], 10000, false, true, null);
   console.log('PASS normal/nonzero/duplicate cancel/timeout/control stdin EOF/root exits while descendant holds streams/output backpressure. G1 remains closed.');
 } else {
-  const executable = resolveCodexExecutable();
+  const executable = process.argv[4] ?? resolveCodexExecutable();
   const version = spawnSync(executable, ['--version'], { encoding: 'utf8', windowsHide: true });
   assert.equal(version.status, 0);
-  const invocation = codexInvocation(fixture, 'Create marker.txt in this disposable repository containing exactly codex-fixture-ok followed by a newline. Do not access other directories, invoke external services or commit.', model);
-  const result = await run('codex', executable, invocation.argv, 180000, false, false, null);
+  const invocation = codexInvocation(fixture, 'Create marker.txt in this disposable repository containing exactly codex-fixture-ok followed by a newline. Do not access other directories, invoke external services or commit.', model, executable);
+  const result = await run('codex', invocation.program, invocation.argv, 180000, false, false, null);
   const output = result.events.filter(e => e.kind === 'output' && e.stream === 'stdout').map(e => Buffer.from(e.bytes).toString()).join('');
   const types = output.split('\n').filter(Boolean).map(line => JSON.parse(line).type);
   const marker = path.join(fixture, 'marker.txt');
-  const summary = { codexExecutable: executable, codexVersion: version.stdout.trim(), model, userConfigIgnored: true, windowsSandbox: 'elevated', unifiedExec: false, exitCode: result.terminal?.exit_code, helperExitCode: result.helperExitCode, resourceState: result.terminal?.resource_state, resourceLock: result.terminal?.resource_lock, failureLedger: result.terminal?.failure_ledger, eventTypes: types, markerMatches: existsSync(marker) && readFileSync(marker, 'utf8') === 'codex-fixture-ok\n', g1: 'closed' };
+  const summary = { profile: codexProfile.id, codexExecutable: executable, codexVersion: version.stdout.trim(), model, exitCode: result.terminal?.exit_code, helperExitCode: result.helperExitCode, resourceState: result.terminal?.resource_state, resourceLock: result.terminal?.resource_lock, failureLedger: result.terminal?.failure_ledger, eventTypes: types, markerMatches: existsSync(marker) && readFileSync(marker, 'utf8') === 'codex-fixture-ok\n', g1: 'closed' };
   writeFileSync(path.join(directory, 'summary.json'), JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary));
   assert.equal(summary.exitCode, 0, 'real Codex exit must succeed');

@@ -18,7 +18,8 @@
     "dev": "npm run build && npm start",
     "test": "npm run build:server && node tools/test-server.mjs",
     "test:e2e": "npm run build && node tools/test-e2e.mjs",
-    "check": "npm run test && npm run typecheck && npm run test:e2e"
+    "check": "npm run test && npm run typecheck && npm run test:e2e",
+    "postinstall": "node tools/patch-codex-provider.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.52.0",

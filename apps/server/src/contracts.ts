@@ -52,7 +52,7 @@ export interface RunEvidence {
 export interface RealSnapshot {
   profile_id: string; model: string; base_revision: string; repository_identity: string;
   source_path: string; workspace_path: string; receipt_path: string; runtime_id: string; spawn_nonce: string; timeout_ms: number;
-  executable?: string; codex_version?: string; argv?: string[]; environment_names?: string[];
+  executable?: string; driver_program?: string; codex_version?: string; argv?: string[]; environment_names?: string[];
   helper_revision?: string;
   review_identity?: string;
 }

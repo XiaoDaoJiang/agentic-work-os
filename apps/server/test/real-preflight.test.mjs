@@ -1,14 +1,14 @@
 import { verificationShell } from '../dist/verification.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../dist/store.js';
 import { RealExecutor, assertBaseline, receiptMatches } from '../dist/real-executor.js';
-import { executionIdentity, readExecutionProfile, sha256File, g1Cases } from '../dist/execution-profile.js';
+import { executionIdentity, readExecutionProfile, readReviewProfile, sha256File, g1Cases, g2Cases } from '../dist/execution-profile.js';
 import { createApplication } from '../dist/app.js';
 import { release } from 'node:os';
 function fixture(t) { const directory = mkdtempSync(join(tmpdir(), 'workos-g1-unit-')); const source = join(directory, 'source'); mkdirSync(source); const git = args => execFileSync('git', ['-C', source, ...args], { encoding: 'utf8', windowsHide: true }).trim(); git(['init']); writeFileSync(join(source, 'a.txt'), 'baseline'); git(['add', '.']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture']); const store = new Store(join(directory, 'state.sqlite')); t.after(() => { store.close(); rmSync(directory, { recursive: true, force: true }); }); const task = store.createTask({ goal: 'no process should start', definition_of_done: ['fixture'], repository_path: source, verification_draft: { command: 'DO_NOT_RUN', timeout_seconds: 60 } }); const profile = { executable: process.execPath, helper: process.execPath, model: 'gpt-6.1-sol', codex_version: 'fixture', evidence_path: '' }; return { directory, source, store, task, profile, git }; }
@@ -86,19 +86,65 @@ test('G1 default denies absent, incomplete, stale and tampered evidence', t => {
     assert.equal(readExecutionProfile(), null);
     const file = join(directory, 'evidence.json');
     const sources = executionIdentity();
-    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-app-server', platform: 'win32/x64', node: process.version, node_executable: realpathSync(process.execPath), node_executable_sha256: sha256File(process.execPath), os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
     writeFileSync(file, JSON.stringify(manifest));
     assert.ok(readExecutionProfile(file));
-    for (const patch of [{ activation: 'diagnostic' }, { node: 'v0' }, { sources: {} }, { helper_sha256: 'wrong' }, { cases: {} }]) {
+    for (const patch of [{ profile: 'windows-processkit-codex-exec' }, { activation: 'diagnostic' }, { node: 'v0' }, { sources: {} }, { helper_sha256: 'wrong' }, { cases: {} }]) {
         writeFileSync(file, JSON.stringify({ ...manifest, ...patch }));
         assert.equal(readExecutionProfile(file), null);
     }
 });
+for (const gate of ['G1', 'G2']) test(`${gate} binds activation to the current Node executable path and bytes`, t => {
+    const { directory } = fixture(t);
+    const g1File = join(directory, 'node-g1.json'), g2File = join(directory, 'node-g2.json');
+    const nodeIdentity = { node_executable: realpathSync(process.execPath), node_executable_sha256: sha256File(process.execPath) };
+    const g1 = { verification_shell: verificationShell(), verification_shell_sha256: sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-app-server', platform: 'win32/x64', node: process.version, ...nodeIdentity, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources: executionIdentity(), executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    writeFileSync(g1File, JSON.stringify(g1));
+    const profile = readExecutionProfile(g1File);
+    assert.ok(profile);
+    const g2 = { schema: 'fmvp-g2-v1', activation: 'passed', source_identity: profile.source_identity, executable_sha256: g1.executable_sha256, helper_sha256: g1.helper_sha256, node: process.version, ...nodeIdentity, os_release: release(), platform: 'win32/x64', verification_shell_sha256: g1.verification_shell_sha256, model: g1.model, cases: Object.fromEntries(g2Cases.map(name => [name, 'passed'])) };
+    writeFileSync(g2File, JSON.stringify(g2));
+    const read = () => gate === 'G1' ? readExecutionProfile(g1File) : readReviewProfile(profile, g2File);
+    assert.ok(read());
+    for (const patch of [{ node_executable_sha256: '0'.repeat(64) }, { node_executable: process.execPath + '.other' }, { node_executable: undefined, node_executable_sha256: undefined }]) {
+        writeFileSync(gate === 'G1' ? g1File : g2File, JSON.stringify({ ...(gate === 'G1' ? g1 : g2), ...patch }));
+        assert.equal(read(), null);
+    }
+});
+
+test('installed AI runtime drift invalidates activation without changing the lockfile', async t => {
+    const { default: fs } = await import('node:fs');
+    const { syncBuiltinESMExports } = await import('node:module');
+    const { fileURLToPath } = await import('node:url');
+    const { relative } = await import('node:path');
+    const { sourceRoot } = await import('../dist/execution-profile.js');
+    const { directory } = fixture(t);
+    const dependency = fileURLToPath(import.meta.resolve('ai-sdk-provider-codex-cli'));
+    const key = relative(sourceRoot, dependency).replaceAll('\\', '/');
+    const sources = executionIdentity();
+    assert.equal(sources[key], sha256File(dependency));
+    assert.ok(sources['package-lock.json']);
+    assert.ok(sources['apps/server/package.json']);
+    const file = join(directory, 'dependency-evidence.json');
+    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-app-server', platform: 'win32/x64', node: process.version, node_executable: realpathSync(process.execPath), node_executable_sha256: sha256File(process.execPath), os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    writeFileSync(file, JSON.stringify(manifest));
+    assert.ok(readExecutionProfile(file));
+    const read = fs.readFileSync;
+    fs.readFileSync = (file, ...args) => {
+        const value = read(file, ...args);
+        return String(file).replaceAll('\\', '/') === dependency.replaceAll('\\', '/') ? Buffer.concat([Buffer.from(value), Buffer.from('\n// changed installed runtime\n')]) : value;
+    };
+    syncBuiltinESMExports();
+    try { assert.equal(readExecutionProfile(file), null); }
+    finally { fs.readFileSync = read; syncBuiltinESMExports(); }
+    assert.ok(readExecutionProfile(file));
+});
+
 test('application revalidates activation evidence before each actual start', async (t) => {
     const { directory, source } = fixture(t);
     const evidence = join(directory, 'g1.json');
     const sources = executionIdentity();
-    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: 'win32/x64', node: process.version, os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
+    const manifest = { verification_shell:verificationShell(), verification_shell_sha256:sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-app-server', platform: 'win32/x64', node: process.version, node_executable: realpathSync(process.execPath), node_executable_sha256: sha256File(process.execPath), os_release: release(), model: 'gpt-6.1-sol', code_sha: 'a'.repeat(40), sources, executable: process.execPath, helper: process.execPath, executable_sha256: sha256File(process.execPath), helper_sha256: sha256File(process.execPath), codex_version: 'fixture', cases: Object.fromEntries(g1Cases.map(name => [name, 'passed'])) };
     writeFileSync(evidence, JSON.stringify(manifest));
     const app = await createApplication({ databasePath: join(directory, 'app.sqlite'), port: 0, g1EvidencePath: evidence });
     try {
@@ -244,6 +290,14 @@ test('Agent budget is finite and frozen independently of Verification and later 
         const { run } = await executor.start(task.id, 'agent-budget-request', { verify: true, expected_task_revision: task.revision });
         assert.equal(launched.id, run.id);
         assert.equal(run.input_snapshot.execution.timeout_ms, 600000);
+        assert.equal(run.input_snapshot.execution.profile_id, 'windows-processkit-codex-app-server');
+        assert.equal(run.input_snapshot.execution.driver_program, process.execPath);
+        assert.equal(run.input_snapshot.execution.executable, profile.executable);
+        assert.match(run.input_snapshot.execution.argv[0].replaceAll('\\', '/'), /\/codex-app-server-driver\.js$/);
+        const input = JSON.parse(run.input_snapshot.execution.argv[1]);
+        assert.equal(input.executable, profile.executable);
+        assert.equal(input.cwd, run.input_snapshot.execution.workspace_path);
+        assert.match(input.prompt, /no process should start/);
         assert.equal(run.input_snapshot.verification.verification_invocation_v0.timeout_ms, 60000);
         store.updateTask(task.id, { goal: 'next attempt', definition_of_done: task.definition_of_done, repository_path: task.repository_path, verification_draft: { command: 'NEXT_NOT_RUN', timeout_seconds: 1 } });
         const frozen = store.getRun(run.id).input_snapshot;

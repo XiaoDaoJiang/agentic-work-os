@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codexInvocation } from '../apps/server/dist/codex-adapter.js';
+import { codexInvocation, codexProfile } from '../apps/server/dist/codex-adapter.js';
 import { Store } from '../apps/server/dist/store.js';
 import { assertBaseline, receiptMatches } from '../apps/server/dist/real-executor.js';
 import { createApplication } from '../apps/server/dist/app.js';
@@ -39,15 +39,14 @@ function fixture(name) { const cwd = path.join(directory, name); mkdirSync(cwd);
 const source = fixture('source');
 const base = git(source, ['rev-parse', 'HEAD']);
 const repository = await ensureRepositoryMarker(source);
-async function native(name, { invalidConfig = false, timeout = 180000, cancel = false, race = false, prompt = 'Create marker.txt containing exactly g1-ok followed by a newline. Do not commit or access other directories.' } = {}) {
+async function native(name, { invalidModel = false, timeout = 180000, cancel = false, race = false, prompt = 'Create marker.txt containing exactly g1-ok followed by a newline. Do not commit or access other directories.' } = {}) {
     const cwd = fixture(name);
     const id = randomUUID();
     const nonce = randomUUID();
     const receipt = path.join(evidence, `${name}.receipt.json`);
-    const invocation = codexInvocation(cwd, prompt, 'gpt-6.1-sol');
-    if (invalidConfig) invocation.argv.splice(invocation.argv.indexOf('--'), 0, '--config', 'model_provider="g1-fixture-missing-provider"');
+    const invocation = codexInvocation(cwd, prompt, invalidModel ? 'g1-fixture-nonexistent-model' : 'gpt-6.1-sol', executable);
     const req = path.join(evidence, `${name}.request.json`);
-    writeFileSync(req, JSON.stringify({ start: { kind: 'start', protocol: 'local-runner-jsonl-v0', request_id: `start-${id}`, run_id: id, program: executable, argv: invocation.argv, cwd, env: { inheritance_policy: 'allowlist', inherit_names: invocation.inheritNames, overrides: {}, unset: [] }, timeout_ms: timeout }, runtime_id: randomUUID(), spawn_nonce: nonce, repository_identity: repository.repositoryIdentity, base_revision: git(cwd, ['rev-parse', 'HEAD']), helper_revision: git(root, ['rev-parse', 'HEAD']), receipt_path: receipt }));
+    writeFileSync(req, JSON.stringify({ start: { kind: 'start', protocol: 'local-runner-jsonl-v0', request_id: `start-${id}`, run_id: id, program: invocation.program, argv: invocation.argv, cwd, env: { inheritance_policy: 'allowlist', inherit_names: invocation.inheritNames, overrides: {}, unset: [] }, timeout_ms: timeout }, runtime_id: randomUUID(), spawn_nonce: nonce, repository_identity: repository.repositoryIdentity, base_revision: git(cwd, ['rev-parse', 'HEAD']), helper_revision: git(root, ['rev-parse', 'HEAD']), receipt_path: receipt }));
     const child = spawn(helper, [req], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let pending = '';
     const events = [];
@@ -120,7 +119,7 @@ try {
     assert.equal(normal.terminal.exit_code, 0);
     assert.equal(readFileSync(path.join(normal.cwd, 'marker.txt'), 'utf8'), 'g1-ok\n');
     pass('normal');
-    const bad = await native('nonzero', { invalidConfig: true });
+    const bad = await native('nonzero', { invalidModel: true });
     assert.notEqual(bad.terminal.exit_code, 0);
     pass('nonzero');
     await native('cancel', { cancel: true, prompt: 'Run node long-task.cjs in this repository using the shell tool and wait for it. Do not access other directories.' });
@@ -298,7 +297,7 @@ try {
       assert.equal(run.state,'succeeded');assert.equal(run.phase,'test');assert.equal(proof.verification.outcome,'passed');assert.equal(proof.verification.version_match,'match');assert.equal(proof.stages.length,4);assert.equal(verificationApp.store.resourceLock(),null);assert.equal(session.accept,false);assert.equal(session.accepted_delivery,false);
       pass('verification-pipeline');
     } finally {await verificationApp.close();}
-    const manifest = { verification_shell: verificationShell(), verification_shell_sha256: sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: 'windows-processkit-codex-exec', platform: `${process.platform}/${process.arch}`, node: process.version, os_release: os.release(), model: 'gpt-6.1-sol', code_sha: git(root, ['rev-parse', 'HEAD']), sources: executionIdentity(), executable, codex_version: version.stdout.trim(), executable_sha256: sha256File(executable), helper, helper_sha256: sha256File(helper), cases, versions: { git: spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout.trim(), rust: spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim() } };
+    const manifest = { verification_shell: verificationShell(), verification_shell_sha256: sha256File(verificationShell()), schema: 'fmvp-g1-v1', activation: 'passed', profile: codexProfile.id, platform: `${process.platform}/${process.arch}`, node: process.version, node_executable: realpathSync(process.execPath), node_executable_sha256: sha256File(process.execPath), os_release: os.release(), model: 'gpt-6.1-sol', code_sha: git(root, ['rev-parse', 'HEAD']), sources: executionIdentity(), executable, codex_version: version.stdout.trim(), executable_sha256: sha256File(executable), helper, helper_sha256: sha256File(helper), cases, versions: { git: spawnSync('git', ['--version'], { encoding: 'utf8' }).stdout.trim(), rust: spawnSync('rustc', ['--version'], { encoding: 'utf8' }).stdout.trim() } };
     const manifestPath = path.join(evidence, 'g1.json');
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     assert.ok(g1Cases.every(name => cases[name] === 'passed'));
